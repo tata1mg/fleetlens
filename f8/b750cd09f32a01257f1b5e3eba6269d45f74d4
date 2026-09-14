@@ -1,0 +1,61 @@
+.gitignore
+  s_328263bf7aa009::t_bbb72341784c89 1-12
+LICENSE
+  s_328263bf7aa009::t_6328df001de5fd 1-202
+packages/servicelens/servicelens/__init__.py
+  s_328263bf7aa009::t_fad83166203a3e 1-2
+packages/servicelens/servicelens/callgraph/README.md
+  s_328263bf7aa009::t_2117c4c208ae2a 1-57
+packages/servicelens/servicelens/callgraph/__init__.py
+  s_328263bf7aa009::t_dbfe7dcff7278a 1-4
+packages/servicelens/servicelens/callgraph/anchor.py
+  s_328263bf7aa009::t_f0d540bba674a7 1-79
+packages/servicelens/servicelens/callgraph/cli.py
+  s_328263bf7aa009::t_f0aafb81239615 1-120
+packages/servicelens/servicelens/callgraph/extractor.py
+  s_328263bf7aa009::t_956eaa38b04f12 1-165
+packages/servicelens/servicelens/callgraph/scip_reader.py
+  s_328263bf7aa009::t_0b308ca853055c 1-156
+packages/servicelens/servicelens/symbols/__init__.py
+  s_328263bf7aa009::t_e456d3dbb67f4d 1-8
+packages/servicelens/servicelens/symbols/cli.py
+  s_328263bf7aa009::t_594f47d8caee55 1-50
+packages/servicelens/servicelens/symbols/indexer.py
+  s_328263bf7aa009::t_6675762fb0fa84 1-221
+packages/servicelens/servicelens/symbols/resolver.py
+  s_328263bf7aa009::t_897f378184fc3e 1-78
+packages/servicelens/tests/test_callgraph_anchor.py
+  s_328263bf7aa009::t_6d192114212f63 1-32
+packages/servicelens/tests/test_callgraph_extractor.py
+  s_328263bf7aa009::t_f2ad18d666e9fa 1-71
+packages/servicelens/tests/test_scip_reader.py
+  s_328263bf7aa009::t_ae8a53712fa5c3 1-89
+packages/servicelens/tests/test_symbols.py
+  s_328263bf7aa009::t_9edae3e26b4157 1-124
+.contextignore
+  s_328263bf7aa009::t_56fc714c1959ec 1-17
+README.md
+  s_328263bf7aa009::t_2553ffde338101 1-48
+ROADMAP.md
+  s_328263bf7aa009::t_a1234df6412c46 1-56
+docs/positioning.md
+  s_328263bf7aa009::t_f51ca5a41e5631 1-50
+packages/servicelens/pyproject.toml
+  s_328263bf7aa009::t_70906e2414b72b 1-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "f8b750cd09f32a01257f1b5e3eba6269d45f74d4",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
