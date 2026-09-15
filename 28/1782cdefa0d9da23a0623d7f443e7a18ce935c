@@ -1,0 +1,29 @@
+packages/servicelens/servicelens/indexing.py
+  s_328263bf7aa009::t_c2ec3face02c66 23-40
+  s_328263bf7aa009::t_5b1630ec41fe5c 49-50
+  s_328263bf7aa009::t_22292be6a13f76 89
+packages/servicelens/servicelens/callgraph/cli.py
+  s_328263bf7aa009::t_57ae9d1b93a610 32-38
+packages/servicelens/servicelens/cli.py
+  s_328263bf7aa009::t_22292be6a13f76 105,111
+packages/servicelens/tests/test_language.py
+  s_328263bf7aa009::t_9bd04eb211ba64 1-27
+README.md
+  s_328263bf7aa009::t_565e2f78ad37d9 46-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "281782cdefa0d9da23a0623d7f443e7a18ce935c",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
