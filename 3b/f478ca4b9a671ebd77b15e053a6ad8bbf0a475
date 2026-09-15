@@ -1,0 +1,37 @@
+packages/servicelens/servicelens/server/tools/callgraph.py
+  s_328263bf7aa009::t_4e3406b8d6f1e6 1-54
+packages/servicelens/servicelens/server/app.py
+  s_328263bf7aa009::t_1f067701ba822f 1-21
+packages/servicelens/servicelens/server/tools/__init__.py
+  s_328263bf7aa009::t_75279338e0646f 1-9
+packages/servicelens/servicelens/cli.py
+  s_328263bf7aa009::t_de51d6610555aa 1-103
+README.md
+  s_328263bf7aa009::t_160278236929b6 11-13,16-23,25-27,29-38,40-48,51-53,58
+packages/servicelens/servicelens/server/__init__.py
+  s_328263bf7aa009::t_75279338e0646f 1-3
+packages/servicelens/servicelens/indexing.py
+  s_328263bf7aa009::t_e51e10bceb3ba7 1-59
+packages/servicelens/pyproject.toml
+  s_328263bf7aa009::t_0166f6779cfc51 17-20,23
+packages/servicelens/tests/test_server.py
+  s_328263bf7aa009::t_ecac516f72dafc 1-36
+.gitignore
+  s_328263bf7aa009::t_f0ec0ecf0b9a40 13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "3bf478ca4b9a671ebd77b15e053a6ad8bbf0a475",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
