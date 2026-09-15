@@ -1,0 +1,31 @@
+packages/servicelens/servicelens/adapters/ts_outbound.py
+  s_328263bf7aa009::t_2e5d6c4d58a2e7 1-37
+packages/servicelens/servicelens/adapters/registry.py
+  s_328263bf7aa009::t_5f0dfc77192a12 13,15
+packages/servicelens/servicelens/adapters/_ts.py
+  s_328263bf7aa009::t_424faf393c6592 1-95
+packages/servicelens/servicelens/indexing.py
+  s_328263bf7aa009::t_b236b560d0e486 65-69,71
+  s_328263bf7aa009::t_9815e85622e851 12-13
+packages/servicelens/tests/test_ts_adapters.py
+  s_328263bf7aa009::t_db84c53fb9b1ec 54-55
+  s_328263bf7aa009::t_5f67d088e13d19 1-53,56-73
+packages/servicelens/servicelens/adapters/ts_web.py
+  s_328263bf7aa009::t_876a3f0f209798 1-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "605a228c56d7d618e967149f9a19f5ded81d4ffc",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
