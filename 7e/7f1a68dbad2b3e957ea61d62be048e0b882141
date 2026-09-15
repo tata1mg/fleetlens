@@ -1,0 +1,33 @@
+README.md
+  s_328263bf7aa009::t_b56c85e0840afb 50-63
+packages/servicelens/servicelens/manifest.py
+  s_328263bf7aa009::t_fdec7017705967 1-92
+packages/servicelens/servicelens/indexing.py
+  s_328263bf7aa009::t_190bca07823d1e 120
+  s_328263bf7aa009::t_f409cf45ea2d6e 72-73,75,80
+  s_328263bf7aa009::t_8dedd00a1aea7f 44-46,51-63,65-66
+  s_328263bf7aa009::t_da2ea9ee4e6064 17
+packages/servicelens/servicelens/cli.py
+  s_328263bf7aa009::t_03331ce86c04b7 32,38-43
+packages/servicelens/tests/test_manifest.py
+  s_328263bf7aa009::t_e25d4d4185603d 1-44,53-66,70,76
+  s_328263bf7aa009::t_35c243eef63c99 45-52,67-69,71-75,77-78
+packages/servicelens/pyproject.toml
+  s_328263bf7aa009::t_b2f8ef5623e337 11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7e7f1a68dbad2b3e957ea61d62be048e0b882141",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
