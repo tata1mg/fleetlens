@@ -1,0 +1,41 @@
+packages/servicelens/servicelens/loaders/__init__.py
+  s_328263bf7aa009::t_c91f6110f0fed3 1
+packages/servicelens/servicelens/store/base.py
+  s_328263bf7aa009::t_3217a94b738100 1-84
+packages/servicelens/servicelens/store/models.py
+  s_328263bf7aa009::t_ab9835610be0b3 1-71
+packages/servicelens/servicelens/store/__init__.py
+  s_328263bf7aa009::t_c91f6110f0fed3 1-6
+packages/servicelens/servicelens/index_cli.py
+  s_328263bf7aa009::t_ebf117267b6efd 1-54
+packages/servicelens/tests/test_store_sqlite.py
+  s_328263bf7aa009::t_f18b0c72cf3f08 1-81
+packages/servicelens/pyproject.toml
+  s_328263bf7aa009::t_73526fc859a904 21
+packages/servicelens/servicelens/store/sqlite.py
+  s_328263bf7aa009::t_31f98d1a3b4c15 1-204
+packages/servicelens/servicelens/loaders/callgraph.py
+  s_328263bf7aa009::t_46c29662026874 1-75
+packages/servicelens/servicelens/service/callgraph.py
+  s_328263bf7aa009::t_8a3e7f2ddab3fa 1-119
+packages/servicelens/servicelens/service/__init__.py
+  s_328263bf7aa009::t_c91f6110f0fed3 1-3
+packages/servicelens/tests/test_service_callgraph.py
+  s_328263bf7aa009::t_1d91098080f74c 1-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ee0bd49bf257fd316d2077cfcac4e2da89abc199",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
