@@ -1,0 +1,35 @@
+packages/servicelens/servicelens/indexing.py
+  s_328263bf7aa009::t_6426e00ea82040 11,14
+  s_328263bf7aa009::t_110aefcbc5beda 32-37,40
+packages/servicelens/servicelens/cli.py
+  s_328263bf7aa009::t_da4cb61cb70bca 37-38
+  s_328263bf7aa009::t_d3a16b69add4d9 53-54
+packages/servicelens/tests/test_adapters.py
+  s_328263bf7aa009::t_3c79346da40da5 1-82
+packages/servicelens/servicelens/adapters/base.py
+  s_328263bf7aa009::t_0b010dcc569281 1-57
+packages/servicelens/servicelens/adapters/python_web.py
+  s_328263bf7aa009::t_b229e79d3ddb2d 1-129
+packages/servicelens/servicelens/adapters/registry.py
+  s_328263bf7aa009::t_926a4987f895f6 1-57
+packages/servicelens/servicelens/loaders/interfaces.py
+  s_328263bf7aa009::t_2f17f37432a355 1-43
+packages/servicelens/servicelens/adapters/__init__.py
+  s_328263bf7aa009::t_bac4fddc399645 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "507fbfba93b8b8027fa115d017d7a37f33068f68",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
