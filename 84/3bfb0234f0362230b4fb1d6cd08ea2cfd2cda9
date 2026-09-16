@@ -1,0 +1,48 @@
+packages/servicelens/servicelens/server/tools/__init__.py
+  s_328263bf7aa009::t_d2d779139528e8 2,4
+packages/servicelens/servicelens/enrich/providers.py
+  s_328263bf7aa009::t_349bb4e1d85ab7 1-117
+packages/servicelens/servicelens/server/tools/discovery.py
+  s_328263bf7aa009::t_a2903cb250a9a5 1-28
+packages/servicelens/tests/test_enrich.py
+  s_328263bf7aa009::t_ae64c5125bb8d6 1-90
+packages/servicelens/servicelens/enrich/enrich.py
+  s_328263bf7aa009::t_85c056f3363f06 1-75
+packages/servicelens/servicelens/enrich/__init__.py
+  s_328263bf7aa009::t_d2d779139528e8 1-5
+packages/servicelens/servicelens/store/base.py
+  s_328263bf7aa009::t_1e08d5171d4e28 54-81
+packages/servicelens/servicelens/cli.py
+  s_328263bf7aa009::t_280c857e30fb46 192-205,208-212
+  s_328263bf7aa009::t_96d1f72cc9471d 95-141,151-158
+README.md
+  s_328263bf7aa009::t_86c35770939a32 50-61
+packages/servicelens/tests/test_server.py
+  s_328263bf7aa009::t_002990077a45e5 26
+packages/servicelens/servicelens/server/app.py
+  s_328263bf7aa009::t_9ae0ee6f3e72f1 7,17,23-25,27-32
+packages/servicelens/servicelens/service/discovery.py
+  s_328263bf7aa009::t_a41759be57c18f 1-37
+packages/servicelens/servicelens/store/sqlite.py
+  s_328263bf7aa009::t_4a8405281804c4 10,12,15
+  s_328263bf7aa009::t_914b6b5756736b 91-92
+  s_328263bf7aa009::t_276fae09e8f68f 221-252
+  s_328263bf7aa009::t_5d29eaa594d99b 45-59,62-75
+  s_328263bf7aa009::t_8a268fb57c4802 76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "843bfb0234f0362230b4fb1d6cd08ea2cfd2cda9",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
