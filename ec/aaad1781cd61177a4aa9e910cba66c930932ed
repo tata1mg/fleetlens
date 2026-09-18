@@ -1,0 +1,27 @@
+packages/servicelens/servicelens/service/relationships.py
+  s_d5ea2fae8a9c21::t_8c543d695328e0 21-44
+packages/servicelens/servicelens/server/tools/service_graph.py
+  s_d5ea2fae8a9c21::t_8c543d695328e0 15-21
+  s_d5ea2fae8a9c21::t_739154129383ba 14
+packages/servicelens/tests/test_server.py
+  s_d5ea2fae8a9c21::t_8c543d695328e0 25,39-43,45-65
+  s_d5ea2fae8a9c21::t_b08e2e246d14eb 44
+README.md
+  s_d5ea2fae8a9c21::t_642d6d3450b309 40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ecaaad1781cd61177a4aa9e910cba66c930932ed",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
