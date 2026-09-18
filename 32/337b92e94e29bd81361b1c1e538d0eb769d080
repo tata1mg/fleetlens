@@ -1,0 +1,83 @@
+packages/servicelens/servicelens/adapters/registry.py
+  s_d5ea2fae8a9c21::t_98242868917d45 9,12,19,26,42-43,45-46,61-64
+packages/servicelens/servicelens/adapters/ts_web.py
+  s_d5ea2fae8a9c21::t_f7c855e8b75a0c 15,40,46-53
+  s_d5ea2fae8a9c21::t_519cad6c99ace7 35
+packages/servicelens/servicelens/adapters/outbound.py
+  s_d5ea2fae8a9c21::t_37198027c966fd 18-19,21-22,70-80,84-85,93-98,101-112,120,125-126,132
+packages/servicelens/servicelens/adapters/_ts.py
+  s_d5ea2fae8a9c21::t_f7c855e8b75a0c 9,25-31,62-77,115-124,126-131
+packages/servicelens/servicelens/enrich/providers.py
+  s_d5ea2fae8a9c21::t_b0616698425137 76-84
+packages/servicelens/servicelens/cli.py
+  s_d5ea2fae8a9c21::t_bc2ef70101a040 25-42,44-49,51-56,58-66,70-84,90-95,98,109-110,121-126,129,133-135,137,174,177-181,187,234-236,243-245,257,259
+  s_d5ea2fae8a9c21::t_b0616698425137 43,50,57,67-69,99
+  s_d5ea2fae8a9c21::t_b6f69624c0f47a 185-186,188-195,260-263
+  s_d5ea2fae8a9c21::t_c4fe80617a4bf5 107-108
+packages/servicelens/servicelens/store/sqlite.py
+  s_328263bf7aa009::t_21254457bdb7e8 95-101
+packages/servicelens/servicelens/enrich/gaps.py
+  s_d5ea2fae8a9c21::t_a6c116de5d3704 190,247
+  s_d5ea2fae8a9c21::t_dbedbee727a377 29-31,111-115,117-126
+  s_d5ea2fae8a9c21::t_ab6a5ae39c30a8 1-22,26-28,32-35,37-62,64-77,107-110,116,127-155,172-176,179-187,189,191-203,205-237,248-249,251-263
+  s_d5ea2fae8a9c21::t_6ea59457d4587b 23,36,63
+  s_d5ea2fae8a9c21::t_f87719953e642e 78-106
+  s_d5ea2fae8a9c21::t_2211068577840b 24-25,156-171,177-178,188,204,238-246,250
+packages/servicelens/servicelens/indexing.py
+  s_d5ea2fae8a9c21::t_f7c855e8b75a0c 84
+  s_d5ea2fae8a9c21::t_d38e77878872fe 8-9,83,90-93,98,104
+  s_d5ea2fae8a9c21::t_bc2ef70101a040 46,50-51,56,60,105-109,124,135
+  s_d5ea2fae8a9c21::t_a6c116de5d3704 110
+packages/servicelens/tests/test_gaps.py
+  s_d5ea2fae8a9c21::t_bec7ccded75acb 60
+  s_d5ea2fae8a9c21::t_c8655e579e215b 190-217,221
+  s_d5ea2fae8a9c21::t_2211068577840b 116,135-140
+  s_d5ea2fae8a9c21::t_ddc2ea66f9400e 222-229
+  s_d5ea2fae8a9c21::t_650a253ff84999 1-9,11-59,61-110,112-115,117-134,141-189
+  s_d5ea2fae8a9c21::t_fffc77a5cb3e32 10,111
+  s_d5ea2fae8a9c21::t_57409a5813f5be 230-264
+  s_d5ea2fae8a9c21::t_ab4bd3b45a7310 218-220
+packages/servicelens/servicelens/adapters/python_web.py
+  s_d5ea2fae8a9c21::t_dbedbee727a377 97
+  s_d5ea2fae8a9c21::t_d670db4e1b14ad 18,75-76,78,91-96,98-99,127,132-133,139
+packages/servicelens/servicelens/adapters/base.py
+  s_d5ea2fae8a9c21::t_b23debb24608a0 41-63
+  s_d5ea2fae8a9c21::t_69f15579710b30 9
+  s_d5ea2fae8a9c21::t_cbcf24e09c00ac 85
+  s_d5ea2fae8a9c21::t_2d8dd8fdf54546 80-84,86-98
+README.md
+  s_d5ea2fae8a9c21::t_ddc2ea66f9400e 52
+  s_d5ea2fae8a9c21::t_1001fad909144c 53-56,58-61,64-71,73-75,77,81
+  s_d5ea2fae8a9c21::t_c4fe80617a4bf5 50-51,57,62-63
+packages/servicelens/tests/test_enrich.py
+  s_d5ea2fae8a9c21::t_b0616698425137 91-100
+packages/servicelens/servicelens/enrich/__init__.py
+  s_d5ea2fae8a9c21::t_b6f69624c0f47a 1-2,4,7
+packages/servicelens/servicelens/adapters/ts_outbound.py
+  s_d5ea2fae8a9c21::t_f7c855e8b75a0c 10-12,15-23,28,39-46
+  s_d5ea2fae8a9c21::t_c8655e579e215b 36-38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "32337b92e94e29bd81361b1c1e538d0eb769d080",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    },
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    }
+  }
+}
