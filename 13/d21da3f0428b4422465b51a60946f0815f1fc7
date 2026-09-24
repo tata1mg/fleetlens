@@ -1,0 +1,25 @@
+packages/fleetlens/fleetlens/adapters/outbound.py
+  s_d5ea2fae8a9c21::t_8da90d3c61b6c2 57-80,124-126
+packages/fleetlens/fleetlens/resolve.py
+  s_d5ea2fae8a9c21::t_fee0ebcdcda781 27-62,97,101-103,107-108,116,122-131,174
+packages/fleetlens/tests/test_resolve.py
+  s_d5ea2fae8a9c21::t_55e7d1e572332c 79-158
+packages/fleetlens/tests/test_gaps.py
+  s_d5ea2fae8a9c21::t_7b74b8f4102b7c 78-81,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "13d21da3f0428b4422465b51a60946f0815f1fc7",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
