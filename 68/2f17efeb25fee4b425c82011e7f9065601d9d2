@@ -1,0 +1,24 @@
+bench/score.py
+  s_d5ea2fae8a9c21::t_183a7f6c30eb58 84-87
+  s_d5ea2fae8a9c21::t_a9e06e81e551f9 47-56,68-69,73,134-135
+bench/questions/c4.jsonl
+  s_d5ea2fae8a9c21::t_a9e06e81e551f9 1-12
+bench/make_questions_c4.py
+  s_d5ea2fae8a9c21::t_8416107e5126fa 1-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "682f17efeb25fee4b425c82011e7f9065601d9d2",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
