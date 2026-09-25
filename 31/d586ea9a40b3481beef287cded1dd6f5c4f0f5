@@ -1,0 +1,26 @@
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_61d4a622ac3153 3,203-209,294-298
+  s_d5ea2fae8a9c21::t_a38f855b87a8bc 299
+packages/fleetlens/fleetlens/doctor.py
+  s_d5ea2fae8a9c21::t_aeef366fb5334e 1-184
+Dockerfile
+  s_d5ea2fae8a9c21::t_fe7a58d1e6c0c9 1-53
+.github/workflows/ci.yml
+  s_d5ea2fae8a9c21::t_89e942f1da4a5e 36-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "31d586ea9a40b3481beef287cded1dd6f5c4f0f5",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
