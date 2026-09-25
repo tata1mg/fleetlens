@@ -1,0 +1,21 @@
+ROADMAP.md
+  s_d5ea2fae8a9c21::t_c16d260837accd 13-14
+docs/positioning.md
+  s_d5ea2fae8a9c21::t_bd6913476fd594 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "618b58238757a6761a49d4aa70a6a98f5f54115f",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
