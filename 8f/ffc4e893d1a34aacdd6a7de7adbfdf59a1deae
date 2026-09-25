@@ -1,0 +1,21 @@
+packages/fleetlens/LICENSE
+  s_d5ea2fae8a9c21::t_343b5fd86ca4d0 1
+packages/fleetlens/README.md
+  s_d5ea2fae8a9c21::t_1f7d287707531f 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "8fffc4e893d1a34aacdd6a7de7adbfdf59a1deae",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
