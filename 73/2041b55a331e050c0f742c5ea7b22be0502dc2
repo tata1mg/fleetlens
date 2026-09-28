@@ -1,0 +1,24 @@
+packages/fleetlens/tests/test_serve_http.py
+  s_d5ea2fae8a9c21::t_a27bd2a4462f64 90-100
+docs/deployment.md
+  s_d5ea2fae8a9c21::t_5604847ca32ef6 11-17,20-37,47,50-54,56,66,69,72,75,78-80,82,85,88-91,94,97,99-101,103-105,108,111-112,114-118,128,130,135-136,145,148,150-152,154,156-160,163-165,172-174,177-186,193-201,203,205,208,218,231-232
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_6c9e92fe4f4bf8 15
+  s_d5ea2fae8a9c21::t_6bc01ea62bdc8b 24-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "732041b55a331e050c0f742c5ea7b22be0502dc2",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
