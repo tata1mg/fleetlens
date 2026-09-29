@@ -46,7 +46,8 @@ edges) before re-inserting.
 - **SCIP indexers** (host installs, not Python deps):
   - Python — `npm install -g @sourcegraph/scip-python`
   - TypeScript — `npm install -g @sourcegraph/scip-typescript` *(v1.1)*
-  - Ruby — `gem install scip-ruby` *(v1.1; weakest — Rails metaprogramming limits any
+  - Ruby — `gem install scip-ruby --platform x86_64-linux` (platform-specific gems only;
+    no generic build is published) *(v1.1; weakest — Rails metaprogramming limits any
     static call graph)*
 - **`sync-callgraph`** (`context-sync`) — loads the artifact into the store.
 

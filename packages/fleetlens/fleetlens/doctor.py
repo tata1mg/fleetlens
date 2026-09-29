@@ -80,6 +80,22 @@ def check_core(rep: Report) -> None:
                 'pip install "fleetlens[server]"   (needed for `fl serve`)')
 
 
+def _scip_ruby_hint() -> str:
+    """scip-ruby publishes only platform-specific gems, with no generic `ruby` build, so a
+    plain `gem install scip-ruby` fails with a confusing "Possible alternatives: scip-ruby"
+    however the machine is set up. Name the platform."""
+    import platform
+    machine = platform.machine().lower()
+    if sys.platform.startswith("linux") and machine in ("x86_64", "amd64"):
+        plat = "x86_64-linux"
+    elif sys.platform == "darwin":
+        plat = "arm64-darwin-23" if machine in ("arm64", "aarch64") else "universal-darwin-22"
+    else:
+        return ("no scip-ruby gem is published for this platform; see "
+                "https://github.com/sourcegraph/scip-ruby/releases")
+    return f"gem install scip-ruby --platform {plat}"
+
+
 def check_indexers(rep: Report) -> None:
     for tool, language, required in (("scip-python", "Python", True),
                                      ("scip-typescript", "TypeScript", False),
@@ -94,7 +110,7 @@ def check_indexers(rep: Report) -> None:
                     if tool == "scip-ruby" else "")
             rep.add(tool, SKIP, f"missing, no {language} call graph. {note}".strip(),
                     f"npm install -g @sourcegraph/{tool}" if tool != "scip-ruby" else
-                    "gem install scip-ruby")
+                    _scip_ruby_hint())
 
 
 def check_ollama(rep: Report, base_url: str = "http://localhost:11434") -> None:
