@@ -142,11 +142,14 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
 def _looks_like_repo(d: Path) -> bool:
     if not d.is_dir() or d.name.startswith(".") or d.name in _SKIP:
         return False
-    # any source we can index, or a VCS/manifest marker
-    for marker in (".git", "pyproject.toml", "setup.py", "requirements.txt", "package.json"):
+    # any source we can index, or a VCS/manifest marker. Every supported language needs a
+    # marker here: Ruby support was added without one, so a Rails app with no .git
+    # directory was silently passed over by a fleet sweep.
+    for marker in (".git", "pyproject.toml", "setup.py", "requirements.txt", "package.json",
+                   "Gemfile", "Gemfile.lock", "config/routes.rb"):
         if (d / marker).exists():
             return True
-    return any(d.rglob("*.py")) or any(d.rglob("*.ts"))
+    return any(d.rglob("*.py")) or any(d.rglob("*.ts")) or any(d.rglob("*.rb"))
 
 
 def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm=None,

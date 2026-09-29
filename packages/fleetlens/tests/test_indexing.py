@@ -61,3 +61,21 @@ def test_progress_is_reported_per_repo_and_phase(tmp_path, monkeypatch):
     phases = {d["phase"] for e, d in events if e == "phase"}
     assert {"call graph", "interfaces", "outbound calls"} <= phases
     assert [d["slug"] for e, d in events if e == "repo-done"] == ["alpha", "beta"]
+
+
+def test_a_rails_repo_without_git_is_still_found(tmp_path):
+    """Every supported language needs a marker in the repo sniffer. Ruby was added without
+    one, so a Rails app that happened not to be a git checkout was skipped in silence."""
+    from fleetlens.indexing import _looks_like_repo
+
+    rails = tmp_path / "billing"
+    (rails / "config").mkdir(parents=True)
+    (rails / "Gemfile").write_text("source 'https://rubygems.org'\n")
+    (rails / "config" / "routes.rb").write_text(
+        "Rails.application.routes.draw do\n  get '/billing', to: 'billing#index'\nend\n")
+    assert _looks_like_repo(rails)
+
+    bare = tmp_path / "lib_only"
+    bare.mkdir()
+    (bare / "thing.rb").write_text("class Thing; end\n")
+    assert _looks_like_repo(bare)
