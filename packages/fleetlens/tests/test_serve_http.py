@@ -1,0 +1,136 @@
+"""Read-only serving, the auth boundary, and index freshness reporting."""
+from __future__ import annotations
+
+import pytest
+from fleetlens.server.http import build_auth_middleware, resolve_token
+from fleetlens.store.models import KnowledgeObject
+from fleetlens.store.sqlite import SqliteStore
+
+
+def _obj(name):
+    return KnowledgeObject(
+        object_type="service", object_id=name, name=name, summary=None,
+        version="1", source="static", generation_strategy="deterministic",
+        last_generated_at=None, embed_text=None, payload={})
+
+
+def _seed(path):
+    st = SqliteStore(str(path))
+    st.upsert_object(_obj("orders"))
+    st.commit()
+    st.close()
+
+
+def test_read_only_store_cannot_write(tmp_path):
+    db = tmp_path / "fleet.db"
+    _seed(db)
+    ro = SqliteStore(str(db), read_only=True)
+    assert ro.list_objects("service")[0].name == "orders"
+    with pytest.raises(Exception):
+        ro.upsert_object(_obj("x"))
+        ro.commit()
+    ro.close()
+
+
+def test_read_only_refuses_to_invent_an_index(tmp_path):
+    """Serving a path that does not exist must fail, not come up empty. A server that
+    answers "no services" for a typo'd path is indistinguishable from a broken index."""
+    with pytest.raises(FileNotFoundError):
+        SqliteStore(str(tmp_path / "absent.db"), read_only=True)
+
+
+def test_index_info_reports_coverage(tmp_path):
+    db = tmp_path / "fleet.db"
+    _seed(db)
+    info = SqliteStore(str(db), read_only=True).index_info()
+    assert info["services"] == 1
+    assert info["indexed_at"]
+
+
+def test_serve_http_refuses_to_start_without_a_token(monkeypatch):
+    monkeypatch.delenv("FLEETLENS_TOKEN", raising=False)
+    with pytest.raises(SystemExit):
+        resolve_token("FLEETLENS_TOKEN", allow_insecure=False)
+
+
+def test_insecure_is_opt_in(monkeypatch):
+    monkeypatch.delenv("FLEETLENS_TOKEN", raising=False)
+    assert resolve_token("FLEETLENS_TOKEN", allow_insecure=True) == ""
+
+
+def test_token_comes_from_the_named_env_var(monkeypatch):
+    monkeypatch.setenv("MY_TOKEN", "s3cret")
+    assert resolve_token("MY_TOKEN", allow_insecure=False) == "s3cret"
+
+
+@pytest.mark.parametrize("header,expected", [
+    ("Bearer s3cret", 200),
+    ("Bearer wrong", 401),
+    ("s3cret", 401),
+    ("", 401),
+])
+def test_auth_boundary(header, expected):
+    pytest.importorskip("starlette")
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient
+
+    app = Starlette(routes=[
+        Route("/mcp", lambda r: PlainTextResponse("ok")),
+        Route("/healthz", lambda r: PlainTextResponse("ok")),
+    ])
+    app.add_middleware(build_auth_middleware("s3cret"))
+    client = TestClient(app)
+    headers = {"authorization": header} if header else {}
+    assert client.get("/mcp", headers=headers).status_code == expected
+    # the probe endpoint stays open so a load balancer does not need the token
+    assert client.get("/healthz").status_code == 200
+
+
+def test_fleetlens_home_places_the_index_under_it(monkeypatch):
+    """A deployment owns one directory; commands should not have to repeat the path."""
+    import importlib
+
+    import fleetlens.cli as cli
+    monkeypatch.setenv("FLEETLENS_HOME", "/srv/fleetlens")
+    assert importlib.reload(cli)._default_db() == "/srv/fleetlens/data/fleetlens.db"
+    monkeypatch.delenv("FLEETLENS_HOME")
+    assert importlib.reload(cli)._default_db() == "fleetlens.db"
+
+
+def test_renamed_index_is_picked_up_without_a_restart(tmp_path):
+    """The refresh job builds a new file and renames it over the old one. Without this the
+    server keeps the unlinked inode open and serves the previous graph indefinitely."""
+    import os
+
+    db = tmp_path / "fleet.db"
+    _seed(db)
+    ro = SqliteStore(str(db), read_only=True)
+    assert ro.index_info()["services"] == 1
+
+    fresh = tmp_path / "fleet.db.new"
+    st = SqliteStore(str(fresh))
+    st.upsert_object(_obj("orders"))
+    st.upsert_object(_obj("billing"))
+    st.commit()
+    st.close()
+    os.replace(fresh, db)
+
+    assert ro.reload_if_changed() is True
+    assert ro.index_info()["services"] == 2
+    assert ro.reload_if_changed() is False  # steady state does not churn connections
+    ro.close()
+
+
+def test_reload_keeps_serving_when_the_file_goes_missing(tmp_path):
+    """A half-finished refresh must not take the server down."""
+    import os
+
+    db = tmp_path / "fleet.db"
+    _seed(db)
+    ro = SqliteStore(str(db), read_only=True)
+    os.remove(db)
+    assert ro.reload_if_changed() is False
+    assert ro.index_info()["services"] == 1  # still answering from the open descriptor
+    ro.close()

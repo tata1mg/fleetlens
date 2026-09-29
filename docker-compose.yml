@@ -1,0 +1,37 @@
+# Serve one index to a team.
+#
+#   export FLEETLENS_TOKEN=$(openssl rand -hex 32)
+#   docker compose run --rm index      # build the index
+#   docker compose up -d serve         # serve it on :8081
+#
+# Re-run `index` whenever you want a refresh. It builds into a new file and renames it
+# into place, and the running server reopens the new index by itself, so there is no
+# restart and no downtime.
+
+services:
+  index:
+    build: .
+    profiles: [tools]          # only runs when named, never with `up`
+    volumes:
+      - fleetlens-data:/data
+      - ${FLEETLENS_REPOS:-./repos}:/repos   # read-write: fleetlens writes .context/ per repo
+    command: >
+      sh -c "fl index-all /repos --db /data/fleetlens.db.new &&
+             mv /data/fleetlens.db.new /data/fleetlens.db"
+
+  serve:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${FLEETLENS_PORT:-8081}:8081"
+    volumes:
+      - fleetlens-data:/data:ro
+    environment:
+      FLEETLENS_TOKEN: ${FLEETLENS_TOKEN:?set FLEETLENS_TOKEN, e.g. export FLEETLENS_TOKEN=$(openssl rand -hex 32)}
+    command: ["serve", "--http", "--host", "0.0.0.0"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8081/healthz')"]
+      interval: 30s
+
+volumes:
+  fleetlens-data:
