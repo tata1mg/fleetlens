@@ -1,0 +1,27 @@
+# Dependency updates. Security patches arrive regardless of these schedules; this is for
+# ordinary version drift, batched weekly so it does not become background noise.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /packages/fleetlens
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR for routine bumps. Anything with a breaking change still arrives alone.
+      python-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

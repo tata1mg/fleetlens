@@ -1,0 +1,150 @@
+"""Indexing orchestration — build a repo's call graph and load it into a store.
+
+Shared by `fl index` (one repo) and `fl index-all` (a directory of service repos → one DB).
+Deterministic, no LLM. Multi-repo is resilient: one repo failing never aborts the sweep.
+"""
+from __future__ import annotations
+
+import json
+from dataclasses import asdict
+from pathlib import Path
+from typing import Optional
+
+from .adapters import registry as iface_registry
+from .adapters.hosts import config_hosts, service_identity
+from .adapters.outbound import discover_outbound as _py_outbound
+from .adapters.ruby_outbound import discover_outbound as _rb_outbound
+from .adapters.ts_outbound import discover_outbound as _ts_outbound
+from .callgraph import cli as cg_cli
+from .loaders import callgraph as cg_loader
+from .loaders import interfaces as iface_loader
+from .manifest import ServiceSpec, resolve_services
+from .store.models import KnowledgeObject
+from .store.sqlite import SqliteStore
+
+# Immediate subdirs never treated as a service repo.
+_SKIP = {".git", ".venv", "venv", "node_modules", "__pycache__", ".context", ".idea", ".vscode"}
+
+
+def detect_language(repo: Path) -> str:
+    """Best-effort primary language, used to pick the SCIP indexer."""
+    repo = Path(repo)
+    if (repo / "Gemfile").exists() or (repo / "config" / "routes.rb").exists():
+        return "ruby"
+    if (repo / "tsconfig.json").exists():
+        return "typescript"
+    if (repo / "package.json").exists() and _has(repo, "*.ts"):
+        return "typescript"
+    return "python"
+
+
+def _has(repo: Path, pattern: str) -> bool:
+    for p in repo.rglob(pattern):
+        if "node_modules" not in p.parts and ".venv" not in p.parts:
+            return True
+    return False
+
+
+def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
+               language: str = "auto", llm=None) -> list[dict]:
+    """Index every service a repo declares (via fleetlens.yaml), or the repo itself as one
+    service by default. Returns one summary per service.
+
+    With `llm`, sites the parsers could not resolve are filled right after each service is
+    indexed (see enrich.gaps) — so a re-index never silently drops them.
+    Raises on toolchain/usage failure (caller decides whether to continue).
+    """
+    repo = Path(repo).resolve()
+    specs = resolve_services(repo, default_name=slug)
+    return [index_service(repo, spec, store, default_language=language, llm=llm) for spec in specs]
+
+
+def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
+                  default_language: str = "auto", llm=None) -> dict:
+    """Index one declared service (scoped to spec.path within repo) into the store."""
+    repo = Path(repo).resolve()
+    root = (repo / spec.path).resolve()
+    if not root.is_dir():
+        raise RuntimeError(f"service '{spec.name}': path not found: {spec.path}")
+    slug = spec.name
+    language = spec.language if spec.language != "auto" else default_language
+    if language == "auto":
+        language = detect_language(root)
+    rc = cg_cli.main([str(root), "--slug", slug, "--language", language, "--quiet"])
+    if rc != 0:
+        raise RuntimeError(f"call-graph build failed for {slug} (exit {rc})")
+
+    # Interfaces first (deterministic adapters) so their nodes exist when the call-graph
+    # loader attaches handled_by edges (interface -> handler = the endpoint trace).
+    iface_registry.build_interfaces(root, slug)
+    iface_summary = iface_loader.load(root / ".context", slug, store)
+
+    summary = cg_loader.load(root / ".context", slug, store, store)
+
+    # A service node carrying its outbound HTTP calls — the consumer side the fleet resolver
+    # later joins against every service's interfaces.
+    seen, calls, skipped_out = set(), [], []
+    for c in (_py_outbound(root, skipped_out) + _ts_outbound(root, skipped_out)
+              + _rb_outbound(root, skipped_out)):  # language-agnostic merge
+        if (c.verb, c.path) not in seen:
+            seen.add((c.verb, c.path))
+            calls.append(c)
+    outbound = [{"verb": c.verb, "path": c.path, "host": c.host, "evidence": c.evidence}
+                for c in calls]
+    # Service addresses this repo declares in config. Generic twelve-factor convention;
+    # which service each address denotes is decided by the pluggable resolvers.
+    host_bindings = [{"key": b.key, "host": b.host, "port": b.port, "value": b.value,
+                      "file": b.file} for b in config_hosts(root)]
+    identity = service_identity(root)   # the port/name peers address this service by
+    # Sites the adapters saw but could not resolve — the only input the LLM gap-filler
+    # (`fl enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
+    skipped = json.loads((root / ".context" / "skipped.json").read_text()).get("sites", []) \
+        + [asdict(sk) for sk in skipped_out]
+    store.upsert_object(KnowledgeObject(
+        object_type="service", object_id=slug, name=slug, summary=None, version="unknown",
+        source="static", generation_strategy="index", last_generated_at=None, embed_text=None,
+        payload={"symbol_count": summary["nodes"], "interface_count": iface_summary.get("interfaces", 0),
+                 "outbound": outbound, "host_bindings": host_bindings,
+                 "declared_hosts": dict(spec.hosts or {}), "identity": identity,
+                 "root": str(root), "skipped": skipped}))
+    store.commit()
+
+    summary["slug"] = slug
+    summary["interfaces"] = iface_summary.get("interfaces", 0)
+    summary["outbound"] = len(outbound)
+    summary["host_bindings"] = len(host_bindings)
+    summary["skipped"] = len(skipped)
+    if llm is not None and skipped:
+        from .enrich.gaps import fill_gaps
+        g = fill_gaps(store, llm, only_slug=slug)
+        summary["gaps"] = g
+        summary["interfaces"] += g["interfaces"]
+        summary["handled_by"] += g["handled_by"]
+    return summary
+
+
+def _looks_like_repo(d: Path) -> bool:
+    if not d.is_dir() or d.name.startswith(".") or d.name in _SKIP:
+        return False
+    # any source we can index, or a VCS/manifest marker
+    for marker in (".git", "pyproject.toml", "setup.py", "requirements.txt", "package.json"):
+        if (d / marker).exists():
+            return True
+    return any(d.rglob("*.py")) or any(d.rglob("*.ts"))
+
+
+def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm=None) -> dict:
+    """Index every service repo directly under `base_dir` into one shared store.
+
+    Resilient: a repo that fails to index is recorded and skipped; the sweep continues.
+    Returns {ok: [...summaries], failed: [(slug, error)...]}.
+    """
+    base_dir = Path(base_dir).resolve()
+    repos = sorted(d for d in base_dir.iterdir() if _looks_like_repo(d))
+    ok, failed = [], []
+    for repo in repos:
+        try:
+            ok.extend(index_repo(repo, store, language=language, llm=llm))  # a repo may yield N services
+        except Exception as exc:  # noqa: BLE001 - one repo must not abort the fleet sweep
+            failed.append((repo.name, str(exc)))
+    return {"ok": ok, "failed": failed, "considered": len(repos)}

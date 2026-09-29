@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fleetlens"
+version = "0.0.1"
+description = "The cross-repo context your coding agent cannot grep for: a service graph for microservices, derived from source and served over MCP."
+requires-python = ">=3.10"
+keywords = ["microservices", "mcp", "call-graph", "static-analysis", "code-intelligence", "ai-agents"]
+readme = "README.md"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Libraries",
+]
+
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+# PyYAML for the optional service manifest (fleetlens.yaml). Tiny + ubiquitous; a
+# fleetlens.json manifest works with no dependency at all.
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+# The SCIP reader is dependency-free. Symbol indexing + call graph need tree-sitter.
+symbols = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0"]
+callgraph = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0"]
+# The MCP server. Pinned <2.0 (2.0 removed mcp.server.fastmcp).
+server = ["mcp>=1.2.0,<2.0"]
+# Everything needed to try it end-to-end.
+all = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0", "mcp>=1.2.0,<2.0"]
+
+[project.urls]
+Homepage = "https://github.com/tata1mg/fleetlens"
+Repository = "https://github.com/tata1mg/fleetlens"
+Issues = "https://github.com/tata1mg/fleetlens/issues"
+Benchmark = "https://github.com/tata1mg/fleetlens/blob/main/BENCHMARK.md"
+
+[project.scripts]
+fl = "fleetlens.cli:main"
+fl-symbols = "fleetlens.symbols.cli:main"
+fl-callgraph = "fleetlens.callgraph.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fleetlens*"]
