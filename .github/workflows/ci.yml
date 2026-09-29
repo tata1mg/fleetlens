@@ -1,0 +1,108 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The workflow only reads the repository. Narrowing this here means a compromised action
+# in any job cannot push commits or move tags.
+permissions:
+  contents: read
+
+# A force-push to a PR branch should cancel the run it superseded rather than race it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Bounded so a ruff release cannot turn an unrelated pull request red.
+      - run: pip install "ruff>=0.16,<0.17"
+      - run: ruff check packages/fleetlens bench
+        # config lives in packages/fleetlens/pyproject.toml
+        working-directory: .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: pip install -e "packages/fleetlens[all]" pytest
+      - name: Test
+        working-directory: packages/fleetlens
+        run: python -m pytest -q
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build --wheel
+        working-directory: packages/fleetlens
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t fleetlens:ci .
+      - name: Image runs and reports a healthy setup
+        run: docker run --rm fleetlens:ci doctor
+
+      # Index a throwaway repo and serve it, so the HTTP transport and the auth boundary
+      # are exercised end to end rather than only unit-tested.
+      - name: Index a sample repo and serve it over HTTP
+        run: |
+          set -euo pipefail
+          mkdir -p sample/app
+          cat > sample/app/main.py <<'PY'
+          from fastapi import FastAPI
+          app = FastAPI()
+
+          @app.get("/orders")
+          def list_orders():
+              return []
+          PY
+          # scip-python inspects repository metadata, so an un-initialised directory makes
+          # the call-graph step fail and the assertion below would pass on an empty index.
+          git init -q sample && git -C sample add -A \
+            && git -C sample -c user.email=ci@example.com -c user.name=ci commit -qm init
+
+          docker run --rm -v "$PWD/sample:/repos/sample" -v fl-ci:/data \
+            fleetlens:ci index-all /repos
+          docker run -d --name fl-serve -p 8081:8081 -v fl-ci:/data \
+            -e FLEETLENS_TOKEN=ci-token fleetlens:ci serve --http --host 0.0.0.0
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8081/healthz > /dev/null && break || sleep 1
+          done
+          echo "health:" && curl -sf http://localhost:8081/healthz
+
+          # Assert the sample was actually indexed. Without this the job passes on an
+          # empty database, which proves only that the process starts.
+          services=$(curl -sf http://localhost:8081/healthz | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"])')
+          test "$services" -ge 1 || { echo "expected >=1 indexed service, got $services"; exit 1; }
+
+          echo "unauthenticated request must be rejected"
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/mcp)
+          test "$code" = "401" || { echo "expected 401, got $code"; docker logs fl-serve; exit 1; }
+
+      - name: Server logs
+        if: always()
+        run: docker logs fl-serve || true

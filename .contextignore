@@ -1,0 +1,17 @@
+# Files fleetlens must never read or store. Extend per repo.
+# Fail-closed policy: if unsure whether a file is sensitive, exclude it.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets*
+credentials*
+*secret*
+*password*
+id_rsa*
+.git/
+node_modules/
+.venv/
+venv/

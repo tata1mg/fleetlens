@@ -1,0 +1,33 @@
+# Dependency updates. Security patches arrive regardless of these schedules; this is for
+# ordinary version drift, batched weekly so it does not become background noise.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /packages/fleetlens
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # mcp 2.0 removed mcp.server.fastmcp, which the server is built on. The bound in
+      # pyproject.toml is deliberate, so a major bump is a porting task rather than a
+      # dependency update, and a standing PR proposing it is just noise.
+      - dependency-name: mcp
+        update-types: [version-update:semver-major]
+    groups:
+      # One PR for routine bumps. Anything with a breaking change still arrives alone.
+      python-dependencies:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

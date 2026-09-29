@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+*.scip
+.context/
+.DS_Store
+*.db
+.idea/
+.vscode/
+
+# Deployment environment files hold FLEETLENS_TOKEN. Untracked is not enough: one
+# `git add -A` is all it takes, and a token in a public repository is a token gone.
+.env
+.env.*
+!.env.example
+
+# benchmark artifacts (raw runs are large and machine-specific)
+bench/results/
