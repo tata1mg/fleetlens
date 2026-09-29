@@ -1,0 +1,23 @@
+packages/fleetlens/fleetlens/callgraph/README.md
+  s_d5ea2fae8a9c21::t_947fa906a00be0 49-50
+packages/fleetlens/fleetlens/doctor.py
+  s_d5ea2fae8a9c21::t_947fa906a00be0 83-98,113
+packages/fleetlens/tests/test_doctor.py
+  s_d5ea2fae8a9c21::t_57c664472bdb02 1-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "bebfde12aef53afc2f2060915797dfcdb096e8d5",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
