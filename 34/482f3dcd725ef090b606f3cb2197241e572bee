@@ -1,0 +1,219 @@
+packages/fleetlens/fleetlens/export.py
+  s_d5ea2fae8a9c21::t_bd16573075a434 1-83
+packages/fleetlens/tests/test_manifest.py
+  s_d5ea2fae8a9c21::t_316de668536eb8 1-77
+bench/run.py
+  s_d5ea2fae8a9c21::t_4d50aea3bb7fbb 1-200,203-256
+  s_d5ea2fae8a9c21::t_35af2d0c3ecdb2 201-202
+packages/fleetlens/fleetlens/server/__init__.py
+  s_328263bf7aa009::t_88031694c006c7 1-2,4
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 3
+packages/fleetlens/pyproject.toml
+  s_d5ea2fae8a9c21::t_add286f6964d94 1-50
+packages/fleetlens/fleetlens/symbols/resolver.py
+  s_328263bf7aa009::t_efec47f7b29ee8 1-78
+CONTRIBUTING.md
+  s_d5ea2fae8a9c21::t_3bef7d41e475fb 1-112
+packages/fleetlens/fleetlens/adapters/ts_outbound.py
+  s_d5ea2fae8a9c21::t_e98ce3c68997af 1-58
+packages/fleetlens/README.md
+  s_d5ea2fae8a9c21::t_4efe117cc2caba 1
+packages/fleetlens/fleetlens/service/discovery.py
+  s_d5ea2fae8a9c21::t_266ce34c2606d3 1-37
+docker-compose.yml
+  s_d5ea2fae8a9c21::t_60ef70a3de53db 18-20,37
+  s_d5ea2fae8a9c21::t_f78b62813f64c2 1-17,24,27-36,38-43
+  s_d5ea2fae8a9c21::t_8db68b25f307f6 21-23,25-26
+packages/fleetlens/fleetlens/loaders/__init__.py
+  s_328263bf7aa009::t_a60568fd7d0a51 1
+packages/fleetlens/fleetlens/server/tools/service_graph.py
+  s_d5ea2fae8a9c21::t_5b20f987413143 1-64
+packages/fleetlens/fleetlens/store/sqlite.py
+  s_d5ea2fae8a9c21::t_44e99277086100 1-344
+packages/fleetlens/fleetlens/callgraph/scip_reader.py
+  s_328263bf7aa009::t_3350dc2b4cd7a1 1-156
+packages/fleetlens/fleetlens/adapters/ruby_web.py
+  s_d5ea2fae8a9c21::t_5c6f55385a12ee 1-284
+docs/deployment.md
+  s_d5ea2fae8a9c21::t_c602309bfa7b3d 1-181
+packages/fleetlens/fleetlens/store/__init__.py
+  s_328263bf7aa009::t_5f4d198e253995 1-2,10-12
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 3-9
+packages/fleetlens/fleetlens/adapters/python_web.py
+  s_d5ea2fae8a9c21::t_d9bc5f33007126 1-140
+packages/fleetlens/fleetlens/symbols/indexer.py
+  s_328263bf7aa009::t_e49fbd8c33eee5 1-221
+packages/fleetlens/fleetlens/callgraph/cli.py
+  s_d5ea2fae8a9c21::t_28f799226a64c0 1-172
+packages/fleetlens/fleetlens/indexing.py
+  s_d5ea2fae8a9c21::t_fcd2a4c0a011b2 73-78,80,118
+  s_d5ea2fae8a9c21::t_0762c0f05fc20d 1-72,79,81-117,119-156
+packages/fleetlens/fleetlens/service/relationships.py
+  s_d5ea2fae8a9c21::t_8743bbecf3854e 1-134
+packages/fleetlens/fleetlens/server/tools/__init__.py
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 2
+  s_328263bf7aa009::t_6f755f19795676 1,3-9
+packages/fleetlens/fleetlens/resolve.py
+  s_d5ea2fae8a9c21::t_42c9efab84569d 1-230
+.github/workflows/ci.yml
+  s_d5ea2fae8a9c21::t_14a2dce73dba94 83-87,96-100
+  s_d5ea2fae8a9c21::t_adbccd427a4c82 8-17,19-25,28-31,68-82,88-95,101-108
+  s_d5ea2fae8a9c21::t_70e72962699413 1-7,18,32-67
+  s_d5ea2fae8a9c21::t_877238ecf4dbd6 26-27
+packages/fleetlens/tests/test_callgraph_anchor.py
+  s_d5ea2fae8a9c21::t_f9d263aab9f8c7 1-32
+bench/questions/c1.jsonl
+  s_d5ea2fae8a9c21::t_4cb09fab0ff058 1-10
+packages/fleetlens/fleetlens/service/__init__.py
+  s_328263bf7aa009::t_d3fb408e19213f 1-2,4
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 3
+packages/fleetlens/fleetlens/server/app.py
+  s_d5ea2fae8a9c21::t_5cf5427065a07c 1-33
+packages/fleetlens/fleetlens/adapters/outbound.py
+  s_d5ea2fae8a9c21::t_0d02d4520e9e23 1-177
+packages/fleetlens/fleetlens/callgraph/anchor.py
+  s_328263bf7aa009::t_53462d64da9be9 1-79
+packages/fleetlens/fleetlens/symbols/__init__.py
+  s_328263bf7aa009::t_779489eb8f7164 1-8
+packages/fleetlens/tests/test_resolve.py
+  s_d5ea2fae8a9c21::t_c94c6b05be5107 1-237,239-247,249-302
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 238,248
+packages/fleetlens/tests/test_serve_http.py
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 73
+  s_d5ea2fae8a9c21::t_a59519cb47e897 1-72,74-136
+packages/fleetlens/tests/test_enrich.py
+  s_d5ea2fae8a9c21::t_35af2d0c3ecdb2 20
+  s_d5ea2fae8a9c21::t_7a3aaeacafca06 1-19,21-100
+packages/fleetlens/tests/test_ts_adapters.py
+  s_d5ea2fae8a9c21::t_b53485ae9feada 1-73
+ruff.toml
+  s_d5ea2fae8a9c21::t_877238ecf4dbd6 1-15
+packages/fleetlens/tests/test_server.py
+  s_d5ea2fae8a9c21::t_c76b3c7bb5f991 1-100
+packages/fleetlens/tests/test_scip_reader.py
+  s_d5ea2fae8a9c21::t_e33768a68e461d 1-89
+bench/questions/c4.jsonl
+  s_d5ea2fae8a9c21::t_8f0ad1f25f511b 1-12
+packages/fleetlens/fleetlens/enrich/gaps.py
+  s_d5ea2fae8a9c21::t_403a3f7b32bb1c 1-323
+bench/score.py
+  s_d5ea2fae8a9c21::t_5fec26fea31d2d 1-211
+packages/fleetlens/fleetlens/manifest.py
+  s_d5ea2fae8a9c21::t_cae2d80b8456e1 1-99
+packages/fleetlens/fleetlens/adapters/registry.py
+  s_d5ea2fae8a9c21::t_e489dd12197269 1-66
+Dockerfile
+  s_d5ea2fae8a9c21::t_1795cdc24ccafc 1-68
+README.md
+  s_d5ea2fae8a9c21::t_9efc19c3fcbacf 1-331,333-351
+  s_d5ea2fae8a9c21::t_a4894fff618e78 332
+packages/fleetlens/fleetlens/service/callgraph.py
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 10
+  s_d5ea2fae8a9c21::t_bb4d9245851481 1-9,11-119
+packages/fleetlens/fleetlens/server/http.py
+  s_d5ea2fae8a9c21::t_45d6c6ae1086fc 1-115
+packages/fleetlens/fleetlens/callgraph/README.md
+  s_d5ea2fae8a9c21::t_e0062494b185c3 1-57
+packages/fleetlens/LICENSE
+  s_d5ea2fae8a9c21::t_e8cae14b494d91 1
+.gitignore
+  s_d5ea2fae8a9c21::t_a6f82cd369eb73 1-18
+packages/fleetlens/fleetlens/adapters/__init__.py
+  s_328263bf7aa009::t_b22b8924064ebc 1-5
+packages/fleetlens/fleetlens/callgraph/extractor.py
+  s_328263bf7aa009::t_f4abc5a2d632d6 1-165
+packages/fleetlens/fleetlens/adapters/messaging.py
+  s_d5ea2fae8a9c21::t_e7c9771080d9e3 1-315
+ROADMAP.md
+  s_d5ea2fae8a9c21::t_2f3cc09e9ea04e 1-2
+  s_d5ea2fae8a9c21::t_a4894fff618e78 3-69
+packages/fleetlens/tests/test_callgraph_extractor.py
+  s_d5ea2fae8a9c21::t_3807a244fa381a 1-70
+.contextignore
+  s_d5ea2fae8a9c21::t_eda8348497be50 1-17
+packages/fleetlens/tests/test_symbols.py
+  s_d5ea2fae8a9c21::t_0134a459fb619c 1-124
+packages/fleetlens/fleetlens/adapters/base.py
+  s_d5ea2fae8a9c21::t_648130eca49dcd 1-99
+.github/dependabot.yml
+  s_d5ea2fae8a9c21::t_bdffb0ef20891d 10-15
+  s_d5ea2fae8a9c21::t_be9bcf264fbf3e 1-9,16-33
+packages/fleetlens/fleetlens/adapters/ts_web.py
+  s_d5ea2fae8a9c21::t_b1b21fa1cae6b9 1-59
+packages/fleetlens/tests/test_language.py
+  s_d5ea2fae8a9c21::t_327860d2624c44 1-27
+SECURITY.md
+  s_d5ea2fae8a9c21::t_56e9794a0f9189 1-29
+packages/fleetlens/fleetlens/enrich/__init__.py
+  s_d5ea2fae8a9c21::t_60d30c3051fe6a 1-7
+docs/mesh.svg
+  s_d5ea2fae8a9c21::t_ddab29b8530b5f 1-2
+packages/fleetlens/tests/test_service_callgraph.py
+  s_d5ea2fae8a9c21::t_870d997107fd04 1-92
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_991d4cc1145d13 1-23,25-57,63-126,133-159,166-174,177,183-246,260-294,296-380
+  s_d5ea2fae8a9c21::t_bdffb0ef20891d 247-259
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 24,58-62,295
+  s_d5ea2fae8a9c21::t_e1a02929339a46 127-132,160-165,175-176,178-182
+docs/mesh-diagno.svg
+  s_d5ea2fae8a9c21::t_6219fef13ae244 1-2
+packages/fleetlens/tests/test_export.py
+  s_d5ea2fae8a9c21::t_d1f7de54ef1d67 1-39
+LICENSE
+  s_328263bf7aa009::t_1285ad916e255b 1-202
+packages/fleetlens/fleetlens/callgraph/__init__.py
+  s_328263bf7aa009::t_564d5b01305639 1-4
+packages/fleetlens/tests/test_ruby_adapters.py
+  s_d5ea2fae8a9c21::t_c0d48bd4baaea1 1-160
+packages/fleetlens/tests/test_indexing.py
+  s_d5ea2fae8a9c21::t_a0a81a6a63d089 1-4
+  s_d5ea2fae8a9c21::t_25b8fa4ced4f8c 5-35
+packages/fleetlens/fleetlens/enrich/providers.py
+  s_d5ea2fae8a9c21::t_76aec31496b568 1-125
+bench/README.md
+  s_d5ea2fae8a9c21::t_58ff7eaa2e638f 1-98
+packages/fleetlens/tests/test_adapters.py
+  s_d5ea2fae8a9c21::t_6f5a2ab4bc7f24 1-82
+packages/fleetlens/fleetlens/adapters/hosts.py
+  s_d5ea2fae8a9c21::t_b2004a67bb56d2 1-325
+packages/fleetlens/fleetlens/adapters/_ts.py
+  s_d5ea2fae8a9c21::t_7f52b90dbcee42 1-131
+packages/fleetlens/tests/test_store_sqlite.py
+  s_d5ea2fae8a9c21::t_96857f581dd066 1-81
+packages/fleetlens/tests/test_messaging.py
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 6-10
+  s_d5ea2fae8a9c21::t_33a57d7aead104 1-5,11-161
+packages/fleetlens/tests/test_gaps.py
+  s_d5ea2fae8a9c21::t_ea586ca671ecf0 1-287
+bench/make_questions_c4.py
+  s_d5ea2fae8a9c21::t_d585f42f552cca 1-142,144-193
+  s_d5ea2fae8a9c21::t_d2d07ef9f2b1e8 143
+packages/fleetlens/fleetlens/symbols/cli.py
+  s_d5ea2fae8a9c21::t_4c3cea8f287bcc 1-50
+packages/fleetlens/fleetlens/__init__.py
+  s_d5ea2fae8a9c21::t_64dabc22b9569e 1-2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "34482f3dcd725ef090b606f3cb2197241e572bee",
+  "prompts": {},
+  "sessions": {
+    "s_328263bf7aa009": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "831cfb33-557e-4ac0-97c8-651c78a4b459",
+        "model": "claude-opus-4-8"
+      },
+      "human_author": "Prashant Mishra <prashantmishra@L9KXW927K6local-1026.local>"
+    },
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": null
+    }
+  }
+}
