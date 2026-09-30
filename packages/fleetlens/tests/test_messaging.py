@@ -159,3 +159,52 @@ def test_a_known_publisher_directs_an_unknown_end():
     s.commit()
     r = resolve(s, s, s)
     assert r["async_edges"] == 1 and r["shared_channel_edges"] == 0
+
+
+def test_files_without_a_candidate_call_are_not_parsed(tmp_path, monkeypatch):
+    """The scan drops files by text before parsing them. That is only safe because every
+    result is appended inside the branch matching one of those method names, so a file
+    without one cannot contribute. This pins that the filter stays exact."""
+    import ast as ast_mod
+
+    from fleetlens.adapters import messaging as m
+
+    (tmp_path / "noise.py").write_text("def add(a, b):\n    return a + b\n")
+    (tmp_path / "real.py").write_text(
+        "import boto3\n"
+        "sqs = boto3.client('sqs')\n"
+        "sqs.send_message(QueueUrl='orders-queue', MessageBody='{}')\n")
+
+    parsed: list = []
+    real_parse = ast_mod.parse
+    monkeypatch.setattr(m.ast, "parse", lambda src, *a, **kw: (parsed.append(src), real_parse(src))[1])
+
+    found = m.messaging_sites(tmp_path, [])
+    assert any("orders-queue" in (i.path or "") for i in found)
+    assert len(parsed) == 1                      # noise.py never reached the parser
+
+
+def test_applies_and_discover_scan_only_once(tmp_path):
+    """`applies` used to re-run the whole scan that `discover` then repeated, which made
+    this adapter three quarters of all interface-discovery time."""
+    from fleetlens.adapters.messaging import MessagingAdapter
+
+    (tmp_path / "svc.py").write_text(
+        "import boto3\n"
+        "sqs = boto3.client('sqs')\n"
+        "sqs.send_message(QueueUrl='orders-queue')\n")
+
+    adapter = MessagingAdapter()
+    calls = {"n": 0}
+    real = adapter._scan
+
+    def counted(repo):
+        calls["n"] += 1
+        return real(repo)
+
+    adapter._scan = counted
+    assert adapter.applies(tmp_path)
+    got = adapter.discover(tmp_path, [])
+    assert calls["n"] == 2                       # two questions asked
+    assert len(adapter._cache) == 1              # one scan performed
+    assert any("orders-queue" in (i.path or "") for i in got)

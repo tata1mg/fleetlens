@@ -133,6 +133,14 @@ def _literal(node) -> Optional[str]:
     return None
 
 
+#: Every method name that can produce a result below. A file whose text contains none of
+#: them cannot yield an interface or a skipped site, because both are appended only inside
+#: the branch that matches one. So this filter drops files without parsing them, and does
+#: so exactly rather than heuristically: no candidate is lost.
+_METHOD_PROBE = re.compile("|".join(
+    re.escape(m) for m in sorted(_PUBLISH_METHODS | _CONSUME_METHODS | _SETUP_METHODS)))
+
+
 def messaging_sites(repo: Path, skipped: Optional[list[SkippedSite]] = None) -> list[Interface]:
     """Python code sites. Returns literal-channel interfaces; records the rest in `skipped`."""
     repo = Path(repo)
@@ -140,12 +148,25 @@ def messaging_sites(repo: Path, skipped: Optional[list[SkippedSite]] = None) -> 
     for p in _iter_py(repo):
         try:
             src = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not _METHOD_PROBE.search(src):
+            continue                      # cannot match below; not worth parsing
+        try:
             tree = ast.parse(src)
         except SyntaxError:
             continue
         rel = p.relative_to(repo).as_posix()
         lines = src.splitlines()
-        has_lib = _imports_messaging(tree)
+        # Deferred: it is a whole extra walk of the tree, and it is only consulted when a
+        # candidate call is found whose receiver name gave nothing away.
+        lib_cache: list = []
+
+        def has_messaging_import(_tree=tree, _cache=lib_cache) -> bool:
+            if not _cache:
+                _cache.append(_imports_messaging(_tree))
+            return _cache[0]
+
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
                 continue
@@ -153,8 +174,9 @@ def messaging_sites(repo: Path, skipped: Optional[list[SkippedSite]] = None) -> 
             if method not in _PUBLISH_METHODS | _CONSUME_METHODS | _SETUP_METHODS:
                 continue
             recv = ast.get_source_segment(src, node.func.value) or ""
-            looks = any(h in recv.lower() for h in _RECEIVER_HINTS) or \
-                (has_lib and method not in ("publish", "send", "emit", "poll", "listen", "subscribe"))
+            looks = any(h in recv.lower() for h in _RECEIVER_HINTS) or (
+                method not in ("publish", "send", "emit", "poll", "listen", "subscribe")
+                and has_messaging_import())
             if not looks:
                 continue
             direction = _direction(method)
@@ -287,15 +309,31 @@ def config_channels(repo: Path) -> list[dict]:
 class MessagingAdapter(InterfaceAdapter):
     name = "messaging"
 
+    def __init__(self) -> None:
+        # Keyed by repo path. One entry per repo indexed in this process.
+        self._cache: dict = {}
+
+    # The registry asks `applies` before `discover`, and for this adapter the honest answer
+    # to "does messaging appear here" is the scan itself. Running it twice made this adapter
+    # alone three quarters of all interface-discovery time. The scan is pure, so the first
+    # result answers both questions.
+    def _scan(self, repo: Path) -> tuple:
+        key = str(Path(repo).resolve())
+        hit = self._cache.get(key)
+        if hit is None:
+            sites: list[SkippedSite] = []
+            out = messaging_sites(Path(repo), sites) + messaging_sites_ts(Path(repo), sites)
+            hit = self._cache[key] = (out, sites)
+        return hit
+
     def applies(self, repo: Path) -> bool:
-        probe: list[SkippedSite] = []
-        return bool(messaging_sites(Path(repo), probe) or messaging_sites_ts(Path(repo), probe)
-                    or probe or declares_messaging_dependency(Path(repo)))
+        out, sites = self._scan(repo)
+        return bool(out or sites or declares_messaging_dependency(Path(repo)))
 
     def discover(self, repo: Path, skipped: Optional[list[SkippedSite]] = None) -> list[Interface]:
         repo = Path(repo)
-        sites: list[SkippedSite] = []
-        out = messaging_sites(repo, sites) + messaging_sites_ts(repo, sites)
+        scanned, sites = self._scan(repo)
+        out = list(scanned)
         if skipped is not None:
             skipped.extend(sites)
         dep = declares_messaging_dependency(repo)

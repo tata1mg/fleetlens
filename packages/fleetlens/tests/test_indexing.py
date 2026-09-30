@@ -58,8 +58,8 @@ def test_progress_is_reported_per_repo_and_phase(tmp_path, monkeypatch):
     repos = [d for e, d in events if e == "repo"]
     assert [r["slug"] for r in repos] == ["alpha", "beta"]
     assert repos[0]["i"] == 1 and repos[0]["n"] == 2       # countable, so it reads as N/M
-    phases = {d["phase"] for e, d in events if e == "phase"}
-    assert {"call graph", "interfaces", "outbound calls"} <= phases
+    phases = " | ".join(d["phase"] for e, d in events if e == "phase")
+    assert "call graph" in phases and "interfaces" in phases and "outbound calls" in phases
     assert [d["slug"] for e, d in events if e == "repo-done"] == ["alpha", "beta"]
 
 

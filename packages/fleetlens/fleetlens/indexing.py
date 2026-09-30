@@ -6,6 +6,8 @@ Deterministic, no LLM. Multi-repo is resilient: one repo failing never aborts th
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
@@ -38,6 +40,11 @@ def detect_language(repo: Path) -> str:
     return "python"
 
 
+@contextmanager
+def _noop_step(_label: str):
+    yield
+
+
 def _has(repo: Path, pattern: str) -> bool:
     for p in repo.rglob(pattern):
         if "node_modules" not in p.parts and ".venv" not in p.parts:
@@ -46,7 +53,7 @@ def _has(repo: Path, pattern: str) -> bool:
 
 
 def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
-               language: str = "auto", llm=None, progress=None) -> list[dict]:
+               language: str = "auto", llm=None, progress=None, stats=None) -> list[dict]:
     """Index every service a repo declares (via fleetlens.yaml), or the repo itself as one
     service by default. Returns one summary per service.
 
@@ -61,12 +68,14 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
     repo = Path(repo).resolve()
     specs = resolve_services(repo, default_name=slug)
     return [index_service(repo, spec, store, default_language=language, llm=llm,
-                          progress=progress) for spec in specs]
+                          progress=progress, stats=stats) for spec in specs]
 
 
 def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
-                  default_language: str = "auto", llm=None, progress=None) -> dict:
-    """Index one declared service (scoped to spec.path within repo) into the store."""
+                  default_language: str = "auto", llm=None, progress=None, stats=None) -> dict:
+    """Index one declared service (scoped to spec.path within repo) into the store.
+
+    `stats`, if given, is a Stats collector that records how long each step took."""
     repo = Path(repo).resolve()
     root = (repo / spec.path).resolve()
     if not root.is_dir():
@@ -82,34 +91,50 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
     # <repo>` reports that case and promises exactly this degraded path, so raising here
     # made the tool contradict its own advice and return nothing for the whole repo.
     _say = progress or (lambda *a: None)
-    _say("phase", {"slug": slug, "phase": "call graph"})
-    rc = cg_cli.main([str(root), "--slug", slug, "--language", language, "--quiet"])
-    call_graph_ok = rc == 0
+    tick = stats.step if stats is not None else _noop_step
 
-    # Interfaces first (deterministic adapters) so their nodes exist when the call-graph
-    # loader attaches handled_by edges (interface -> handler = the endpoint trace).
-    _say("phase", {"slug": slug, "phase": "interfaces"})
-    iface_registry.build_interfaces(root, slug)
-    iface_summary = iface_loader.load(root / ".context", slug, store)
+    # The SCIP indexer is an external process and, on a Python service, two thirds of the
+    # wall clock. Nothing our own adapters do depends on it: interfaces, outbound calls and
+    # config hosts are read straight from source. So start it first and parse alongside it
+    # rather than after it. Only the *loading* order is constrained, and that is preserved
+    # below. Being a subprocess, it holds no GIL, so a thread is enough.
+    _say("phase", {"slug": slug, "phase": "call graph (in background) + interfaces"})
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with tick("call graph (external indexer, overlapped)"):
+            cg_future = pool.submit(
+                cg_cli.main, [str(root), "--slug", slug, "--language", language, "--quiet"])
 
-    summary = cg_loader.load(root / ".context", slug, store, store)
+            with tick("interfaces (adapters)"):
+                iface_registry.build_interfaces(root, slug)
 
-    # A service node carrying its outbound HTTP calls — the consumer side the fleet resolver
-    # later joins against every service's interfaces.
-    _say("phase", {"slug": slug, "phase": "outbound calls"})
-    seen, calls, skipped_out = set(), [], []
-    for c in (_py_outbound(root, skipped_out) + _ts_outbound(root, skipped_out)
-              + _rb_outbound(root, skipped_out)):  # language-agnostic merge
-        if (c.verb, c.path) not in seen:
-            seen.add((c.verb, c.path))
-            calls.append(c)
-    outbound = [{"verb": c.verb, "path": c.path, "host": c.host, "evidence": c.evidence}
-                for c in calls]
-    # Service addresses this repo declares in config. Generic twelve-factor convention;
-    # which service each address denotes is decided by the pluggable resolvers.
-    host_bindings = [{"key": b.key, "host": b.host, "port": b.port, "value": b.value,
-                      "file": b.file} for b in config_hosts(root)]
-    identity = service_identity(root)   # the port/name peers address this service by
+            # A service node carrying its outbound HTTP calls — the consumer side the fleet
+            # resolver later joins against every service's interfaces.
+            _say("phase", {"slug": slug, "phase": "outbound calls"})
+            seen, calls, skipped_out = set(), [], []
+            with tick("outbound calls"):
+                for c in (_py_outbound(root, skipped_out) + _ts_outbound(root, skipped_out)
+                          + _rb_outbound(root, skipped_out)):  # language-agnostic merge
+                    if (c.verb, c.path) not in seen:
+                        seen.add((c.verb, c.path))
+                        calls.append(c)
+            outbound = [{"verb": c.verb, "path": c.path, "host": c.host, "evidence": c.evidence}
+                        for c in calls]
+            # Service addresses this repo declares in config. Generic twelve-factor
+            # convention; which service each address denotes is decided by the resolvers.
+            with tick("config hosts + identity"):
+                host_bindings = [{"key": b.key, "host": b.host, "port": b.port,
+                                  "value": b.value, "file": b.file} for b in config_hosts(root)]
+                identity = service_identity(root)   # the port/name peers address this by
+
+            with tick("waiting on the external indexer"):
+                call_graph_ok = cg_future.result() == 0
+
+    # Interfaces load before the call graph so their nodes exist when the call-graph loader
+    # attaches handled_by edges (interface -> handler = the endpoint trace).
+    with tick("interfaces (load to store)"):
+        iface_summary = iface_loader.load(root / ".context", slug, store)
+    with tick("call graph (load to store)"):
+        summary = cg_loader.load(root / ".context", slug, store, store)
     # Sites the adapters saw but could not resolve — the only input the LLM gap-filler
     # (`fl enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
     skipped = json.loads((root / ".context" / "skipped.json").read_text()).get("sites", []) \

@@ -19,6 +19,7 @@ from pathlib import Path
 from .export import render as render_graph
 from .indexing import index_all, index_repo
 from .resolve import resolve
+from .stats import Stats
 from .store.sqlite import SqliteStore
 
 
@@ -101,6 +102,12 @@ def _gap_line(g: dict) -> str:
             f"{g['unresolved']} unresolvable, {g['rejected']} rejected by grounding")
 
 
+def _count_sources(repo: Path) -> int:
+    """Roughly how much source the run had to read, for a files/second figure."""
+    from .adapters._walk import iter_files
+    return sum(1 for _ in iter_files(Path(repo), (".py", ".ts", ".tsx", ".rb", ".js")))
+
+
 def _progress_printer():
     """Render indexing progress to stderr.
 
@@ -163,8 +170,14 @@ def _cmd_index(args) -> int:
     store = SqliteStore(args.db)
     try:
         prog = _progress_printer()
-        results = index_repo(repo, store, slug=args.slug, language=args.language, llm=llm,
-                             progress=prog)
+        stats = Stats() if getattr(args, "stats", False) else None
+        if stats is not None:
+            with stats.overall():
+                results = index_repo(repo, store, slug=args.slug, language=args.language,
+                                     llm=llm, progress=prog, stats=stats)
+        else:
+            results = index_repo(repo, store, slug=args.slug, language=args.language,
+                                 llm=llm, progress=prog)
         prog.done()
     except RuntimeError as exc:  # ProviderError is a RuntimeError too
         print(f"fl index: {exc}", file=sys.stderr)
@@ -185,6 +198,9 @@ def _cmd_index(args) -> int:
             print(f"fl index: {s['slug']} gaps — {_gap_line(s['gaps'])}")
     if len(results) > 1:
         print(f"fl index: {len(results)} services from one repo (via manifest)")
+    if stats is not None:
+        print("\nfl index: where the time went\n")
+        print(stats.render(files=_count_sources(repo)))
     return 0
 
 
@@ -370,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--language", "-l", default="auto")
     p.add_argument("--fill-gaps", action="store_true", dest="fill_gaps",
                    help="after indexing, LLM-resolve the sites the parsers could not (grounded)")
+    p.add_argument("--stats", action="store_true",
+                   help="report how long each indexing step took")
     _llm_args(p, with_embed=False)
     p.set_defaults(func=_cmd_index)
 
