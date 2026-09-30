@@ -218,7 +218,8 @@ def _cmd_index_all(args) -> int:
     store = SqliteStore(args.db)
     try:
         prog = _progress_printer()
-        res = index_all(base, store, language=args.language, llm=llm, progress=prog)
+        res = index_all(base, store, language=args.language, llm=llm, progress=prog,
+                        jobs=args.jobs)
         prog.done()
     finally:
         store.close()
@@ -397,6 +398,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--language", "-l", default="auto")
     p.add_argument("--fill-gaps", action="store_true", dest="fill_gaps",
                    help="after indexing each repo, LLM-resolve the sites the parsers could not")
+    p.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
+                   help="index N repositories at once. Most of the time is spent waiting on "
+                        "external indexer processes, so this scales well past the core count")
     _llm_args(p, with_embed=False)
     p.set_defaults(func=_cmd_index_all)
 

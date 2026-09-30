@@ -6,7 +6,7 @@ Deterministic, no LLM. Multi-repo is resilient: one repo failing never aborts th
 from __future__ import annotations
 
 import json
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -71,11 +71,16 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
                           progress=progress, stats=stats) for spec in specs]
 
 
-def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
-                  default_language: str = "auto", llm=None, progress=None, stats=None) -> dict:
-    """Index one declared service (scoped to spec.path within repo) into the store.
+def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "auto",
+                     progress=None, stats=None) -> dict:
+    """Everything that can be worked out from source, touching no store.
 
-    `stats`, if given, is a Stats collector that records how long each step took."""
+    Split out so a fleet sweep can run this for several repositories at once. It is where
+    effectively all the time goes, and it is subprocess- and file-bound rather than holding
+    the GIL. Loading the result into the store stays on one thread, because the store is a
+    single SQLite connection and making it concurrent would buy nothing: loading is
+    milliseconds against tens of seconds of extraction.
+    """
     repo = Path(repo).resolve()
     root = (repo / spec.path).resolve()
     if not root.is_dir():
@@ -84,20 +89,13 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
     language = spec.language if spec.language != "auto" else default_language
     if language == "auto":
         language = detect_language(root)
-    # A failed call graph degrades the result, it does not invalidate it. Interfaces,
-    # outbound calls and config-declared hosts are extracted independently of it, and they
-    # are what the cross-repo service graph is actually built from. The common cause is a
-    # Python repo with no virtualenv, where scip-python cannot resolve imports; `fl doctor
-    # <repo>` reports that case and promises exactly this degraded path, so raising here
-    # made the tool contradict its own advice and return nothing for the whole repo.
     _say = progress or (lambda *a: None)
     tick = stats.step if stats is not None else _noop_step
 
     # The SCIP indexer is an external process and, on a Python service, two thirds of the
     # wall clock. Nothing our own adapters do depends on it: interfaces, outbound calls and
     # config hosts are read straight from source. So start it first and parse alongside it
-    # rather than after it. Only the *loading* order is constrained, and that is preserved
-    # below. Being a subprocess, it holds no GIL, so a thread is enough.
+    # rather than after it. Being a subprocess, it holds no GIL, so a thread is enough.
     _say("phase", {"slug": slug, "phase": "call graph (in background) + interfaces"})
     with ThreadPoolExecutor(max_workers=1) as pool:
         with tick("call graph (external indexer, overlapped)"):
@@ -129,39 +127,61 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
             with tick("waiting on the external indexer"):
                 call_graph_ok = cg_future.result() == 0
 
+    # Sites the adapters saw but could not resolve — the only input the LLM gap-filler
+    # (`fl enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
+    skipped = json.loads((root / ".context" / "skipped.json").read_text()).get("sites", []) \
+        + [asdict(sk) for sk in skipped_out]
+    return {"slug": slug, "root": root, "spec": spec, "outbound": outbound,
+            "host_bindings": host_bindings, "identity": identity, "skipped": skipped,
+            "call_graph_ok": call_graph_ok}
+
+
+def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats=None) -> dict:
+    """Write one extracted service into the store. Serial by design; milliseconds."""
+    tick = stats.step if stats is not None else _noop_step
+    slug, root, spec = x["slug"], x["root"], x["spec"]
     # Interfaces load before the call graph so their nodes exist when the call-graph loader
     # attaches handled_by edges (interface -> handler = the endpoint trace).
     with tick("interfaces (load to store)"):
         iface_summary = iface_loader.load(root / ".context", slug, store)
     with tick("call graph (load to store)"):
         summary = cg_loader.load(root / ".context", slug, store, store)
-    # Sites the adapters saw but could not resolve — the only input the LLM gap-filler
-    # (`fl enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
-    skipped = json.loads((root / ".context" / "skipped.json").read_text()).get("sites", []) \
-        + [asdict(sk) for sk in skipped_out]
+
     store.upsert_object(KnowledgeObject(
         object_type="service", object_id=slug, name=slug, summary=None, version="unknown",
         source="static", generation_strategy="index", last_generated_at=None, embed_text=None,
-        payload={"symbol_count": summary["nodes"], "interface_count": iface_summary.get("interfaces", 0),
-                 "outbound": outbound, "host_bindings": host_bindings,
-                 "declared_hosts": dict(spec.hosts or {}), "identity": identity,
-                 "root": str(root), "skipped": skipped}))
+        payload={"symbol_count": summary["nodes"],
+                 "interface_count": iface_summary.get("interfaces", 0),
+                 "outbound": x["outbound"], "host_bindings": x["host_bindings"],
+                 "declared_hosts": dict(spec.hosts or {}), "identity": x["identity"],
+                 "root": str(root), "skipped": x["skipped"]}))
     store.commit()
 
     summary["slug"] = slug
-    summary["call_graph"] = "ok" if call_graph_ok else "unavailable"
+    summary["call_graph"] = "ok" if x["call_graph_ok"] else "unavailable"
     summary["interfaces"] = iface_summary.get("interfaces", 0)
-    summary["outbound"] = len(outbound)
-    summary["host_bindings"] = len(host_bindings)
-    summary["skipped"] = len(skipped)
-    if llm is not None and skipped:
+    summary["outbound"] = len(x["outbound"])
+    summary["host_bindings"] = len(x["host_bindings"])
+    summary["skipped"] = len(x["skipped"])
+    if llm is not None and x["skipped"]:
         from .enrich.gaps import fill_gaps
-        _say("phase", {"slug": slug, "phase": "filling gaps"})
+        if progress:
+            progress("phase", {"slug": slug, "phase": "filling gaps"})
         g = fill_gaps(store, llm, only_slug=slug, progress=progress)
         summary["gaps"] = g
         summary["interfaces"] += g["interfaces"]
         summary["handled_by"] += g["handled_by"]
     return summary
+
+
+def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
+                  default_language: str = "auto", llm=None, progress=None, stats=None) -> dict:
+    """Index one declared service (scoped to spec.path within repo) into the store.
+
+    `stats`, if given, is a Stats collector that records how long each step took."""
+    x = _extract_service(repo, spec, default_language=default_language,
+                         progress=progress, stats=stats)
+    return _load_service(x, store, llm=llm, progress=progress, stats=stats)
 
 
 def _looks_like_repo(d: Path) -> bool:
@@ -178,27 +198,78 @@ def _looks_like_repo(d: Path) -> bool:
 
 
 def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm=None,
-              progress=None) -> dict:
+              progress=None, jobs: int = 1) -> dict:
     """Index every service repo directly under `base_dir` into one shared store.
 
     Resilient: a repo that fails to index is recorded and skipped; the sweep continues.
     Returns {ok: [...summaries], failed: [(slug, error)...]}.
+
+    With `jobs` above 1, extraction runs for several repositories at once and the results
+    are loaded into the store one at a time. Extraction is almost all of the work and is
+    spent waiting on external indexer processes, so this is close to free; loading is
+    milliseconds and the store is one SQLite connection, so it stays on this thread.
+
+    Results are loaded in repository order rather than completion order. Nothing should
+    depend on that, but "should" is doing a lot of work in a sentence about an index people
+    diff, so the sweep produces the same store whatever order the workers happen to finish.
     """
     base_dir = Path(base_dir).resolve()
     repos = sorted(d for d in base_dir.iterdir() if _looks_like_repo(d))
     ok, failed = [], []
-    for i, repo in enumerate(repos, 1):
-        if progress:
-            progress("repo", {"i": i, "n": len(repos), "slug": repo.name})
+
+    def extract(repo: Path) -> tuple:
+        """(repo, extracted-services, error). Runs on a worker; touches no store."""
         try:
-            # a repo may yield N services
-            rs = index_repo(repo, store, language=language, llm=llm, progress=progress)
-            ok.extend(rs)
-            if progress:
-                for r in rs:
-                    progress("repo-done", r)
+            specs = resolve_services(repo.resolve(), default_name=None)
+            return repo, [_extract_service(repo, spec, default_language=language,
+                                           progress=progress) for spec in specs], None
         except Exception as exc:  # noqa: BLE001 - one repo must not abort the fleet sweep
+            return repo, [], exc
+
+    def absorb(repo: Path, extracted: list, err) -> None:
+        if err is not None:
+            failed.append((repo.name, str(err)))
+            if progress:
+                progress("repo-failed", {"slug": repo.name, "error": str(err)})
+            return
+        try:
+            rs = [_load_service(x, store, llm=llm, progress=progress) for x in extracted]
+        except Exception as exc:  # noqa: BLE001
             failed.append((repo.name, str(exc)))
             if progress:
                 progress("repo-failed", {"slug": repo.name, "error": str(exc)})
+            return
+        ok.extend(rs)
+        if progress:
+            for r in rs:
+                progress("repo-done", r)
+
+    if jobs <= 1:
+        for i, repo in enumerate(repos, 1):
+            if progress:
+                progress("repo", {"i": i, "n": len(repos), "slug": repo.name})
+            absorb(*extract(repo))
+        return {"ok": ok, "failed": failed, "considered": len(repos)}
+
+    done = 0
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = {pool.submit(extract, r): r for r in repos}
+        pending: dict = {}
+        nxt = 0
+        for fut in as_completed(futures):
+            repo, extracted, err = fut.result()
+            done += 1
+            if progress:
+                progress("repo", {"i": done, "n": len(repos), "slug": repo.name})
+            pending[repo] = (extracted, err)
+            # Drain in repository order, so the store is written deterministically even
+            # though the workers finish in whatever order the filesystem and network allow.
+            while nxt < len(repos) and repos[nxt] in pending:
+                r = repos[nxt]
+                absorb(r, *pending.pop(r))
+                nxt += 1
+        for r in repos[nxt:]:
+            if r in pending:
+                absorb(r, *pending.pop(r))
+
     return {"ok": ok, "failed": failed, "considered": len(repos)}
