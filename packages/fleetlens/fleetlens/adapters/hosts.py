@@ -30,6 +30,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
+from ._walk import ALWAYS_EXCLUDE, _excluded, load_contextignore
+
 _SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
          "vendor", ".context", "tests", "test"}
 _CONFIG_GLOBS = ("config*.json", "config*.yaml", "config*.yml", "settings*.json",
@@ -43,20 +45,48 @@ _THIRD_PARTY = re.compile(
     r"datadoghq\.com|slack\.com|github\.com|facebook\.com|cloudfront\.net|akamai)", re.I)
 
 
+# `scheme://user:password@host` — the standard way a connection string carries a secret,
+# and the reason a DATABASE_URL or AMQP_URL cannot be stored as written.
+_USERINFO = re.compile(r"(?P<scheme>[a-z][a-z0-9+.\-]*://)[^/@\s]*@", re.I)
+# A value that is mostly opaque characters is a token, whatever the key is called.
+_OPAQUE = re.compile(r"^[A-Za-z0-9+/_\-]{24,}={0,2}$")
+
+
+def redact(value: str) -> str:
+    """A config value safe to keep.
+
+    fleetlens reads config to learn which services talk to which, and the useful part of
+    `postgres://admin:hunter2@db.internal:5432/orders` is `db.internal:5432`. The credential
+    in the middle is incidental, and an index is meant to be shared: the deployment guide
+    says to copy the database file around, and the benchmark publishes what it contains. So
+    the value is stored with the secret removed rather than trusting that no one looks.
+    """
+    if not value:
+        return value
+    cleaned = _USERINFO.sub(lambda m: m.group("scheme"), value)
+    if _OPAQUE.match(cleaned.strip()):
+        return "[redacted]"
+    return cleaned
+
+
 @dataclass
 class HostBinding:
     """One `<key> = <address>` pair found in a repo's configuration."""
     key: str            # dotted key path, e.g. "SERVICES.ORDERS.HOST"
-    value: str          # raw value, e.g. "http://orders-svc:8080"
+    value: str          # address with any credential removed, e.g. "http://orders-svc:8080"
     file: str = ""      # repo-relative config file
     host: str = ""      # bare hostname
     port: str = ""      # port, when the address carries one
 
     def __post_init__(self):
+        # Parse host and port from the value as written, then keep only the redacted form.
+        # Doing it in this order means a credentialled URL still resolves to the right
+        # service while the credential never reaches the store.
         if not self.host:
             self.host = bare_host(self.value)
         if not self.port:
             self.port = bare_port(self.value)
+        self.value = redact(self.value)
 
 
 @dataclass
@@ -268,6 +298,10 @@ def _config_files(repo: Path, max_parts: int) -> list[Path]:
     cost scaled with what happened to be checked out rather than with the project.
     """
     out: list[Path] = []
+    # A repo can exclude a config file from being read at all. Config is the one place
+    # fleetlens deliberately reads files that may hold secrets, so the escape hatch belongs
+    # here more than anywhere else.
+    patterns = load_contextignore(repo)
 
     def walk(d: Path, depth: int) -> None:
         try:
@@ -275,11 +309,17 @@ def _config_files(repo: Path, max_parts: int) -> list[Path]:
         except OSError:
             return
         for p in entries:
+            rel = p.relative_to(repo).as_posix()
             if p.is_dir():
-                if p.name not in _SKIP and depth + 1 < max_parts:
+                if (p.name not in _SKIP and depth + 1 < max_parts
+                        and not _excluded(rel, p.name, patterns)):
                     walk(p, depth + 1)
             elif any(fnmatch(p.name, g) for g in _CONFIG_GLOBS):
-                out.append(p)
+                # ALWAYS_EXCLUDE is not applied to config: reading `.env` for `ORDERS_HOST`
+                # is the point, and values are redacted on the way into HostBinding. A repo
+                # that disagrees says so in .contextignore.
+                if not _excluded(rel, p.name, tuple(patterns[len(ALWAYS_EXCLUDE):])):
+                    out.append(p)
 
     walk(repo, 0)
     return out

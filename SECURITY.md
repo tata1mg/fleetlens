@@ -20,10 +20,27 @@ Two paths can send code off the machine, and both are opt-in:
 
 ## Config and secrets
 
-fleetlens reads configuration files to resolve service addresses and queue names. It stores
-**keys and hostnames**, not values that look like credentials, and `.contextignore` excludes
-sensitive files with a fail-closed default (`.env`, `*.pem`, `*.key`, `secrets*`,
-`credentials*`, `*password*` and more).
+fleetlens reads configuration files to work out which services address which. That includes
+`.env`, because `ORDERS_SERVICE_HOST=orders-svc` is exactly the fact it is looking for.
+
+Connection strings routinely carry a password in the middle of an address, so the credential
+is stripped before anything is stored: `postgres://admin:hunter2@db.internal:5432/orders` is
+kept as `postgres://db.internal:5432/orders`. The host and port survive, the secret does not.
+Values that are wholly opaque are stored as `[redacted]`.
+
+Some files are never read at all, whatever a repo's configuration says:
+
+```
+*.pem  *.key  *.p12  *.pfx  *.jks  *.keystore
+id_rsa  id_dsa  id_ecdsa  id_ed25519
+*secret*  *credential*  *password*
+.npmrc  .pypirc  .netrc  .htpasswd
+```
+
+A repo can exclude more by listing patterns in `.contextignore`, one per line, gitignore
+style. That includes `.env` itself if you would rather fleetlens did not read it, at the cost
+of the service addresses declared there. A repo can add to this set; it cannot remove
+anything from the list above.
 
 Before sharing a `fleet.db`, be aware it contains service names, endpoint paths, queue names,
-config key paths and source file paths from the indexed repositories.
+config key paths, hostnames, ports and source file paths from the indexed repositories.
