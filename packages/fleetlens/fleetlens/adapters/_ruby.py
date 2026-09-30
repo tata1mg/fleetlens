@@ -9,15 +9,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterator, Optional
 
+from ._walk import COMMON_SKIP, iter_files
+
+# Python virtualenv names are here because this adapter runs against every repo, not
+# only Ruby ones, and a checked-in venv is thousands of files it would otherwise walk.
 _SKIP = {".git", "vendor", "node_modules", "tmp", "log", "coverage", "public",
-         ".bundle", "spec", "test", "__pycache__", ".context", ".claude"}
+         ".bundle", "spec", "test", "__pycache__", ".context", ".claude",
+         ".venv", "venv", "env"}
 
 
 def iter_rb_files(repo: Path) -> Iterator[Path]:
-    for p in repo.rglob("*.rb"):
-        if any(part in _SKIP for part in p.relative_to(repo).parts):
-            continue
-        yield p
+    yield from iter_files(repo, (".rb",), skip=COMMON_SKIP | _SKIP)
 
 
 def parser():

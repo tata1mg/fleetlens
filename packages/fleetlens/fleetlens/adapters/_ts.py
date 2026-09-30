@@ -10,8 +10,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
 
-_SKIP = {".git", ".venv", "node_modules", "__pycache__", "dist", "build", ".context",
-         "tests", "test", "__tests__"}
+from ._walk import COMMON_SKIP, iter_files
+
+# `venv` and `env` as well as `.venv`: a Python service with a TypeScript frontend is
+# ordinary, and without the bare names this walks thousands of site-packages files.
+_SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
+         ".context", "tests", "test", "__tests__"}
 _HTTP_VERBS = {"get", "post", "put", "patch", "delete", "options", "head"}
 
 
@@ -32,13 +36,10 @@ class Call:
 
 
 def iter_ts_files(repo: Path) -> Iterator[Path]:
-    for ext in ("*.ts", "*.tsx"):
-        for p in repo.rglob(ext):
-            if any(part in _SKIP for part in p.relative_to(repo).parts):
-                continue
-            if p.name.endswith(".d.ts"):
-                continue
-            yield p
+    for p in iter_files(repo, (".ts", ".tsx"), skip=COMMON_SKIP | _SKIP):
+        if p.name.endswith(".d.ts"):
+            continue                      # declarations carry no routes or call sites
+        yield p
 
 
 def _string_value(node) -> Optional[str]:

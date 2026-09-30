@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
@@ -257,40 +258,61 @@ def _load(p: Path):
     return out or None
 
 
+def _config_files(repo: Path, max_parts: int) -> list[Path]:
+    """Config files lying within `max_parts` path segments of the repo root.
+
+    Walks once, pruning skipped directories as it descends, rather than globbing the whole
+    tree per pattern and discarding the misses afterwards. `rglob` cannot be pruned, so on
+    a repo with a virtualenv or node_modules in the working tree the old approach visited
+    thousands of files, once for each of eight patterns, to find a handful of configs. That
+    cost scaled with what happened to be checked out rather than with the project.
+    """
+    out: list[Path] = []
+
+    def walk(d: Path, depth: int) -> None:
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            return
+        for p in entries:
+            if p.is_dir():
+                if p.name not in _SKIP and depth + 1 < max_parts:
+                    walk(p, depth + 1)
+            elif any(fnmatch(p.name, g) for g in _CONFIG_GLOBS):
+                out.append(p)
+
+    walk(repo, 0)
+    return out
+
+
 def config_hosts(repo: Path) -> list[HostBinding]:
     """Every service address declared in this repo's configuration."""
     repo = Path(repo)
     seen, out = set(), []
-    for pattern in _CONFIG_GLOBS:
-        for p in sorted(repo.rglob(pattern)):
-            rel_parts = p.relative_to(repo).parts
-            if any(s in rel_parts for s in _SKIP) or not p.is_file():
+    for p in _config_files(repo, 3):          # config lives near the root
+        data = _load(p)
+        if not isinstance(data, (dict, list)):
+            continue
+        for key, value in _flatten(data):
+            leaf = key.rsplit(".", 1)[-1]
+            if not isinstance(value, str) or not value.strip():
                 continue
-            if len(rel_parts) > 3:
-                continue                      # config lives near the root
-            data = _load(p)
-            if not isinstance(data, (dict, list)):
+            if not _HOST_KEY.search(leaf):
                 continue
-            for key, value in _flatten(data):
-                leaf = key.rsplit(".", 1)[-1]
-                if not isinstance(value, str) or not value.strip():
-                    continue
-                if not _HOST_KEY.search(leaf):
-                    continue
-                host = bare_host(value)
-                if not host:
-                    continue
-                # Loopback addresses are KEPT: PortResolver and KeyNameResolver exist to
-                # resolve exactly those (dev/compose configs address peers on localhost).
-                # A bare top-level HOST with no port is this service's own bind address.
-                if host in _LOOPBACK and "." not in key and not bare_port(value):
-                    continue
-                rec = (key, host)
-                if rec in seen:
-                    continue
-                seen.add(rec)
-                out.append(HostBinding(key=key, value=value.strip(),
-                                       file=p.relative_to(repo).as_posix()))
+            host = bare_host(value)
+            if not host:
+                continue
+            # Loopback addresses are KEPT: PortResolver and KeyNameResolver exist to
+            # resolve exactly those (dev/compose configs address peers on localhost).
+            # A bare top-level HOST with no port is this service's own bind address.
+            if host in _LOOPBACK and "." not in key and not bare_port(value):
+                continue
+            rec = (key, host)
+            if rec in seen:
+                continue
+            seen.add(rec)
+            out.append(HostBinding(key=key, value=value.strip(),
+                                   file=p.relative_to(repo).as_posix()))
     return out
 
 
@@ -307,19 +329,15 @@ def service_identity(repo: Path) -> dict:
     """
     repo = Path(repo)
     out: dict = {"port": "", "name": ""}
-    for pattern in _CONFIG_GLOBS:
-        for f in sorted(repo.rglob(pattern)):
-            rel = f.relative_to(repo).parts
-            if any(x in rel for x in _SKIP) or not f.is_file() or len(rel) > 2:
+    for f in _config_files(repo, 2):
+        data = _load(f)
+        if not isinstance(data, dict):
+            continue
+        for k, v in data.items():
+            if not isinstance(v, (str, int)):
                 continue
-            data = _load(f)
-            if not isinstance(data, dict):
-                continue
-            for k, v in data.items():
-                if not isinstance(v, (str, int)):
-                    continue
-                if not out["port"] and _SELF_PORT_KEY.match(str(k)):
-                    out["port"] = str(v).strip()
-                if not out["name"] and _SELF_NAME_KEY.match(str(k)):
-                    out["name"] = str(v).strip()
+            if not out["port"] and _SELF_PORT_KEY.match(str(k)):
+                out["port"] = str(v).strip()
+            if not out["name"] and _SELF_NAME_KEY.match(str(k)):
+                out["name"] = str(v).strip()
     return out

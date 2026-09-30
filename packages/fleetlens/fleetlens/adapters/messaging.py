@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from ._walk import iter_files
 from .base import Interface, InterfaceAdapter, SkippedSite, names_in, snippet_of
 
 PUBLISH = "PUBLISH"
@@ -92,10 +93,7 @@ _CONFIG_GLOBS = ("config*.json", "config*.yaml", "config*.yml", "settings*.json"
 
 
 def _iter_py(repo: Path):
-    for p in repo.rglob("*.py"):
-        if any(part in _SKIP for part in p.relative_to(repo).parts):
-            continue
-        yield p
+    yield from iter_files(repo, (".py",))
 
 
 def _imports_messaging(tree: ast.Module) -> bool:

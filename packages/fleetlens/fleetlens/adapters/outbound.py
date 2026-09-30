@@ -15,6 +15,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._walk import iter_files
 from .base import SkippedSite, names_in, snippet_of
 
 _VERBS = {"get", "post", "put", "patch", "delete", "options", "head"}
@@ -38,10 +39,7 @@ class OutboundCall:
 
 
 def _iter_py(repo: Path):
-    for p in repo.rglob("*.py"):
-        if any(part in _SKIP for part in p.relative_to(repo).parts):
-            continue
-        yield p
+    yield from iter_files(repo, (".py",))
 
 
 def _template(node) -> str | None:
