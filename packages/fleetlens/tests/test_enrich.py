@@ -148,9 +148,10 @@ def test_work_is_committed_in_batches_not_only_at_the_end():
     with pytest.raises(RuntimeError):
         enrich(store, _CountingLLM(fail_after=BATCH + 10), emb, kinds=("service",))
 
-    # the first full batch was embedded and written before the failure
-    assert emb.batches == [BATCH]
-    assert len(store.enrichment_hashes("service", "test-embed")) == BATCH
+    # the full batch, plus the part-filled one flushed on the way out: an LLM call was paid
+    # for each of those summaries, so none of them are thrown away
+    assert emb.batches == [BATCH, 10]
+    assert len(store.enrichment_hashes("service", "test-embed")) == BATCH + 10
 
 
 def test_a_second_run_only_does_what_is_left():
@@ -159,17 +160,17 @@ def test_a_second_run_only_does_what_is_left():
     store = SqliteStore(":memory:")
     total = BATCH * 2 + 5
     _fleet(store, total)
-    emb = _Embedder()
 
+    failed_at = BATCH + 10
     with pytest.raises(RuntimeError):
-        enrich(store, _CountingLLM(fail_after=BATCH + 10), emb, kinds=("service",))
+        enrich(store, _CountingLLM(fail_after=failed_at), _Embedder(), kinds=("service",))
 
     resumed = _CountingLLM()
     r = enrich(store, resumed, _Embedder(), kinds=("service",))
 
-    assert r["skipped"] == BATCH                 # the committed batch is not redone
-    assert resumed.calls == total - BATCH        # only the remainder costs LLM time
-    assert r["generated"] == total - BATCH
+    assert r["skipped"] == failed_at              # everything already stored is skipped
+    assert resumed.calls == total - failed_at     # only the remainder costs LLM time
+    assert r["generated"] == total - failed_at
 
 
 def test_the_embedder_is_never_sent_the_whole_fleet_at_once():

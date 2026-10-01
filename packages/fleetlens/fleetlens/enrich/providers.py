@@ -10,6 +10,7 @@ Thin stdlib HTTP (urllib) — no SDK dependency. Providers are injected, so test
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 from typing import Optional, Protocol, runtime_checkable
@@ -19,14 +20,30 @@ class ProviderError(RuntimeError):
     pass
 
 
-def _post(url: str, payload: dict, headers: Optional[dict] = None, timeout: int = 120) -> dict:
+#: Seconds to wait for a model to answer. The first request to a local model loads the
+#: weights: several gigabytes for a 14b, which on a CPU-only box can take minutes before a
+#: single token is produced. 120 seconds was generous for a warm model and too short for a
+#: cold one, so an overnight job died on its first call.
+TIMEOUT = int(os.environ.get("FLEETLENS_LLM_TIMEOUT", "600"))
+
+
+def _post(url: str, payload: dict, headers: Optional[dict] = None,
+          timeout: Optional[int] = None) -> dict:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/json", **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as resp:
             return json.loads(resp.read().decode())
-    except urllib.error.URLError as exc:  # pragma: no cover - network
+    except TimeoutError as exc:
+        # Not a URLError, so it escaped the handler below and surfaced as a bare traceback
+        # from deep inside http.client, which says nothing about what to do next.
+        raise ProviderError(
+            f"{url} did not answer within {timeout or TIMEOUT}s.\n"
+            f"  A large model loading for the first time can exceed this. Either warm it\n"
+            f"  first (`ollama run <model> ''`), raise FLEETLENS_LLM_TIMEOUT, or use a\n"
+            f"  smaller model.") from exc
+    except (urllib.error.URLError, OSError) as exc:  # pragma: no cover - network
         raise ProviderError(f"request to {url} failed: {exc}") from exc
 
 
@@ -34,7 +51,9 @@ def _get(url: str, timeout: int = 15) -> dict:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
-    except urllib.error.URLError as exc:  # pragma: no cover - network
+    except TimeoutError as exc:
+        raise ProviderError(f"{url} did not answer within {timeout}s") from exc
+    except (urllib.error.URLError, OSError) as exc:  # pragma: no cover - network
         raise ProviderError(f"request to {url} failed: {exc}") from exc
 
 

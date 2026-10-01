@@ -321,6 +321,7 @@ def _cmd_export_graph(args) -> int:
 
 def _cmd_enrich(args) -> int:
     from .enrich import enrich, fill_gaps
+    from .enrich.providers import ProviderError
 
     kinds = tuple(k.strip() for k in args.kinds.split(",") if k.strip())
     summary_kinds = tuple(k for k in kinds if k != "gaps")
@@ -343,7 +344,16 @@ def _cmd_enrich(args) -> int:
                       f"({r['async_edges']} async)")
         if summary_kinds:
             eprog = _enrich_printer()
-            r = enrich(store, llm, embedder, kinds=summary_kinds, progress=eprog)
+            try:
+                r = enrich(store, llm, embedder, kinds=summary_kinds, progress=eprog)
+            except ProviderError as exc:
+                # Hours of work may already be committed. A traceback buries both what was
+                # achieved and what to do about it.
+                eprog.done()
+                print(f"\nfl enrich: stopped — {exc}", file=sys.stderr)
+                print("  Work already committed is kept; re-running resumes from there.",
+                      file=sys.stderr)
+                return 2
             eprog.done()
             print(f"fl enrich: {r['generated']} enriched, {r['skipped']} unchanged "
                   f"(model={r['model']}, kinds={','.join(summary_kinds)})")

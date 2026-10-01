@@ -89,26 +89,36 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
         objs = knowledge.list_objects(kind)
         todo = len(objs)
         batch: list = []            # (obj, summary, content_hash)
-        for n, obj in enumerate(objs, 1):
-            prompt, chash = (_iface_ground(obj) if kind == "interface"
-                             else _svc_ground(obj, knowledge))
-            if existing.get(obj.id) == chash:
-                skipped += 1
+        try:
+            for n, obj in enumerate(objs, 1):
+                prompt, chash = (_iface_ground(obj) if kind == "interface"
+                                 else _svc_ground(obj, knowledge))
+                if existing.get(obj.id) == chash:
+                    skipped += 1
+                    say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
+                                   "skipped": skipped, "id": obj.id, "state": "unchanged"})
+                    continue
+                # Announced before the call, not after. The first request to a local model
+                # loads several gigabytes of weights and can take minutes, which is exactly
+                # the stretch where a silent run looks like a hung one.
                 say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
-                               "skipped": skipped, "id": obj.id, "state": "unchanged"})
-                continue
-            # Announced before the call, not after. The first request to a local model
-            # loads several gigabytes of weights and can take minutes, which is exactly the
-            # stretch where a silent run looks like a hung one.
-            say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
-                           "skipped": skipped, "id": obj.id, "state": "summarising"})
-            system = _IFACE_SYS if kind == "interface" else _SVC_SYS
-            summary = llm.complete(prompt, system=system, max_tokens=_MAX_TOKENS).strip()
-            summary = summary.split("\n")[0][:300]  # hard output cap
-            batch.append((obj, summary, chash))
-            if len(batch) >= BATCH:
+                               "skipped": skipped, "id": obj.id, "state": "summarising"})
+                system = _IFACE_SYS if kind == "interface" else _SVC_SYS
+                summary = llm.complete(prompt, system=system, max_tokens=_MAX_TOKENS).strip()
+                summary = summary.split("\n")[0][:300]  # hard output cap
+                batch.append((obj, summary, chash))
+                if len(batch) >= BATCH:
+                    generated += flush(kind, batch)
+                    batch = []
+            generated += flush(kind, batch)
+        except Exception:
+            # Keep what has already been paid for. Each summary in the part-filled batch
+            # cost an LLM call, and on a model that answers in seconds that is minutes of
+            # work the next run would otherwise buy again.
+            try:
                 generated += flush(kind, batch)
-                batch = []
-        generated += flush(kind, batch)
+            except Exception:       # noqa: BLE001 - the original failure is the useful one
+                pass
+            raise
 
     return {"generated": generated, "skipped": skipped, "model": model}
