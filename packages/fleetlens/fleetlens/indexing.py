@@ -254,22 +254,20 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
     done = 0
     with ThreadPoolExecutor(max_workers=jobs) as pool:
         futures = {pool.submit(extract, r): r for r in repos}
-        pending: dict = {}
-        nxt = 0
+        # Loaded as they finish, not in repository order. An earlier version drained in
+        # order so the store was written deterministically, which held every result behind
+        # the slowest early repository: with 200 repos the database stayed empty well past
+        # the halfway mark and the pending results accumulated in memory. Load order does
+        # not affect the result anyway, because interface ids are assigned during extraction
+        # and every row is keyed by id, so ordering bought nothing for that cost.
         for fut in as_completed(futures):
             repo, extracted, err = fut.result()
             done += 1
             if progress:
                 progress("repo", {"i": done, "n": len(repos), "slug": repo.name})
-            pending[repo] = (extracted, err)
-            # Drain in repository order, so the store is written deterministically even
-            # though the workers finish in whatever order the filesystem and network allow.
-            while nxt < len(repos) and repos[nxt] in pending:
-                r = repos[nxt]
-                absorb(r, *pending.pop(r))
-                nxt += 1
-        for r in repos[nxt:]:
-            if r in pending:
-                absorb(r, *pending.pop(r))
+            absorb(repo, extracted, err)
 
+    # Summaries in repository order, so the printed report reads the same either way.
+    ok.sort(key=lambda s: s["slug"])
+    failed.sort()
     return {"ok": ok, "failed": failed, "considered": len(repos)}

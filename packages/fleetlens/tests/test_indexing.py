@@ -146,3 +146,47 @@ def test_a_failing_repo_does_not_sink_a_parallel_sweep(tmp_path, monkeypatch):
 
     assert [n for n, _ in res["failed"]] == ["svc02"]
     assert sorted(s["slug"] for s in res["ok"]) == ["svc00", "svc01", "svc03"]
+
+
+def test_a_slow_early_repo_does_not_hold_back_everyone_else(tmp_path, monkeypatch):
+    """Results are loaded as they finish, not in repository order.
+
+    An earlier version drained in order so the store was written deterministically. That
+    held every result behind the slowest alphabetically-early repository: on a 200 repo
+    sweep the database stayed empty well past the halfway mark, and the pending results
+    piled up in memory. Ordering bought nothing, because ids are assigned during extraction.
+    """
+    import threading
+
+    from fleetlens import indexing
+
+    _fixture_fleet(tmp_path, n=4)
+    monkeypatch.setattr(indexing.cg_cli, "main", lambda *a, **kw: 0)
+
+    released = threading.Event()
+    real = indexing._extract_service
+
+    def slow_first(repo, spec, **kw):
+        if spec.name == "svc00":                 # sorts first, finishes last
+            assert released.wait(timeout=10), "later repos never loaded"
+        return real(repo, spec, **kw)
+
+    loaded: list = []
+    real_load = indexing._load_service
+
+    def watch(x, store, **kw):
+        out = real_load(x, store, **kw)
+        loaded.append(x["slug"])
+        if len(loaded) == 3:                     # the other three got through
+            released.set()
+        return out
+
+    monkeypatch.setattr(indexing, "_extract_service", slow_first)
+    monkeypatch.setattr(indexing, "_load_service", watch)
+
+    res = indexing.index_all(tmp_path, SqliteStore(":memory:"), jobs=4)
+
+    assert loaded[-1] == "svc00"                 # the blocker loaded last, not first
+    assert sorted(loaded) == ["svc00", "svc01", "svc02", "svc03"]
+    # the printed report is still in repository order whatever order they finished in
+    assert [s["slug"] for s in res["ok"]] == ["svc00", "svc01", "svc02", "svc03"]
