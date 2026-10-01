@@ -15,6 +15,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from ._pysrc import read_and_parse
 from ._walk import iter_files
 from .base import Interface, InterfaceAdapter, SkippedSite, names_in, snippet_of
 
@@ -115,21 +116,17 @@ class PythonWebAdapter(InterfaceAdapter):
 
     def applies(self, repo: Path) -> bool:
         for p in _iter_py(repo):
-            try:
-                if _framework_of(ast.parse(p.read_bytes())):
-                    return True
-            except SyntaxError:
-                continue
+            _, tree = read_and_parse(p)
+            if tree is not None and _framework_of(tree):
+                return True
         return False
 
     def discover(self, repo: Path, skipped: list[SkippedSite] | None = None) -> list[Interface]:
         repo = Path(repo)
         out: list[Interface] = []
         for p in _iter_py(repo):
-            try:
-                src = p.read_text(encoding="utf-8", errors="replace")
-                tree = ast.parse(src)
-            except SyntaxError:
+            src, tree = read_and_parse(p)
+            if tree is None:
                 continue
             fw = _framework_of(tree)
             if fw is None:

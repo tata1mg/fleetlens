@@ -24,6 +24,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from ._pysrc import parse
 from ._walk import iter_files
 from .base import Interface, InterfaceAdapter, SkippedSite, names_in, snippet_of
 
@@ -152,9 +153,8 @@ def messaging_sites(repo: Path, skipped: Optional[list[SkippedSite]] = None) -> 
             continue
         if not _METHOD_PROBE.search(src):
             continue                      # cannot match below; not worth parsing
-        try:
-            tree = ast.parse(src)
-        except SyntaxError:
+        tree = parse(src, p)
+        if tree is None:
             continue
         rel = p.relative_to(repo).as_posix()
         lines = src.splitlines()

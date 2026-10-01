@@ -15,6 +15,7 @@ import ast
 from dataclasses import dataclass
 from pathlib import Path
 
+from ._pysrc import read_and_parse
 from ._walk import iter_files
 from .base import SkippedSite, names_in, snippet_of
 
@@ -156,10 +157,8 @@ def discover_outbound(repo: Path, skipped: list[SkippedSite] | None = None) -> l
     repo = Path(repo)
     out: list[OutboundCall] = []
     for p in _iter_py(repo):
-        try:
-            src = p.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(src)
-        except SyntaxError:
+        src, tree = read_and_parse(p)
+        if tree is None:
             continue
         rel = p.relative_to(repo).as_posix()
         for node in ast.walk(tree):

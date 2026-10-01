@@ -73,3 +73,39 @@ def test_dotenv_is_read_by_default_and_can_be_opted_out(tmp_path):
     (tmp_path / ".contextignore").write_text(".env\n")
     assert _config_files(tmp_path, 3) == []
     assert config_hosts(tmp_path) == []
+
+
+def test_warnings_from_indexed_code_do_not_reach_our_output(tmp_path, recwarn):
+    """Parsing someone else's code should not make their compiler diagnostics ours.
+
+    Python 3.12 warns about `"\\d"` outside a raw string, and `ast.parse` with no filename
+    reports it against `<unknown>`. Across a few hundred repos that is thousands of lines
+    about code the person running the indexer cannot act on from here.
+    """
+    import warnings
+
+    from fleetlens.adapters._pysrc import read_and_parse
+
+    f = tmp_path / "legacy.py"
+    f.write_text('import re\nDIGITS = "\\d+"\nSPACE = "\\s*"\n')
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("always")
+        src, tree = read_and_parse(f)
+
+    assert tree is not None and src          # it still parses
+    assert [w for w in recwarn if "escape sequence" in str(w.message)] == []
+
+
+def test_a_file_that_will_not_compile_is_skipped_not_fatal(tmp_path):
+    """A repo can hold a Python 2 file or a deliberately broken fixture, and the other few
+    hundred files still have interfaces worth finding."""
+    from fleetlens.adapters._pysrc import read_and_parse
+
+    bad = tmp_path / "py2.py"
+    bad.write_text("print 'hello'\n")
+    assert read_and_parse(bad) == (None, None)
+
+    nul = tmp_path / "binary.py"
+    nul.write_bytes(b"x = 1\x00\n")
+    assert read_and_parse(nul)[1] is None
