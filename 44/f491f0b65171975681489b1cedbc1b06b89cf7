@@ -1,0 +1,21 @@
+packages/fleetlens/fleetlens/store/sqlite.py
+  s_d5ea2fae8a9c21::t_2b165b7af8de67 33-35,227-237,240-271
+packages/fleetlens/tests/test_find_symbol.py
+  s_d5ea2fae8a9c21::t_b01302a43b1599 1-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "44f491f0b65171975681489b1cedbc1b06b89cf7",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
