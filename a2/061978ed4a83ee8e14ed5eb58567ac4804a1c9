@@ -1,0 +1,25 @@
+packages/fleetlens/fleetlens/store/sqlite.py
+  s_d5ea2fae8a9c21::t_1f2148a705a60a 15-19,122,165,371,379-389,391-422
+packages/fleetlens/tests/test_enrich.py
+  s_d5ea2fae8a9c21::t_530fac5feef55c 254-255,259-262,264,266-268,273-294
+packages/fleetlens/pyproject.toml
+  s_d5ea2fae8a9c21::t_530fac5feef55c 34-37,39-40
+packages/fleetlens/tests/test_vector_search.py
+  s_d5ea2fae8a9c21::t_0046e5dd258148 1-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "a2061978ed4a83ee8e14ed5eb58567ac4804a1c9",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
