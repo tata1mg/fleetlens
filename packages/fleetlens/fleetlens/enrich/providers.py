@@ -56,6 +56,27 @@ def _post(url: str, payload: dict, headers: Optional[dict] = None,
                 f"  A model loading for the first time can exceed this. Either warm it\n"
                 f"  first (`ollama run <model> ''`), raise FLEETLENS_LLM_TIMEOUT, or use\n"
                 f"  a smaller model.") from exc
+        except urllib.error.HTTPError as exc:
+            # The server answered, and its body says why. "HTTP Error 500: Internal Server
+            # Error" on its own is useless; Ollama puts the real cause there, and for a
+            # runner the kernel killed that is the difference between a mystery and
+            # "out of memory".
+            try:
+                detail = exc.read().decode("utf-8", "replace").strip()[:400]
+            except Exception:  # noqa: BLE001
+                detail = ""
+            # 5xx can be transient: a model runner that died is restarted on the next
+            # request. 4xx will not improve by asking again.
+            if exc.code >= 500 and attempt < ATTEMPTS:
+                time.sleep(2 * attempt)
+                continue
+            hint = ""
+            if exc.code >= 500 and ("memory" in detail.lower() or "killed" in detail.lower()):
+                hint = ("\n  The model runner was killed, which on a shared box means it ran\n"
+                        "  out of memory. Use a smaller model, or free memory on the host.")
+            raise ProviderError(
+                f"{url} returned HTTP {exc.code}"
+                + (f"\n  {detail}" if detail else "") + hint) from exc
         except (urllib.error.URLError, OSError) as exc:  # pragma: no cover - network
             raise ProviderError(f"request to {url} failed: {exc}") from exc
     raise ProviderError(f"request to {url} failed")      # unreachable; keeps the type honest
