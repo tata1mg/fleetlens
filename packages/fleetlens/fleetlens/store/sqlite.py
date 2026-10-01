@@ -30,6 +30,9 @@ CREATE TABLE IF NOT EXISTS knowledge_objects (
     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ko_type ON knowledge_objects(object_type);
+-- Symbol lookup by name. Without it, finding a symbol meant reading all of them: half a
+-- million rows on a real fleet, and the same work again to prove a name does not exist.
+CREATE INDEX IF NOT EXISTS idx_ko_type_name ON knowledge_objects(object_type, name);
 
 CREATE TABLE IF NOT EXISTS relationships (
     from_id      TEXT NOT NULL REFERENCES knowledge_objects(id) ON DELETE CASCADE,
@@ -221,14 +224,51 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         return [found[i] for i in object_ids if i in found]
 
     def find_ids(self, substring: str, object_type: str, limit: int = 20) -> list[str]:
+        """Symbols matching `substring`, best match first.
+
+        Three steps, narrowest first, stopping as soon as there are enough. Exact and prefix
+        matches use the name index and are effectively free; the substring scan is the
+        fallback and only runs when the first two did not fill the limit.
+
+        The previous single query read every symbol, applied `lower()` to each id, and then
+        sorted every match before taking twenty. On half a million symbols that was 336ms,
+        of which 335 was the sort: `ORDER BY` before `LIMIT` denies SQLite the early exit
+        that makes a scan tolerable.
+        """
         if not substring:
             return []
-        rows = self._conn.execute(
-            "SELECT id FROM knowledge_objects WHERE object_type = ? "
-            "AND instr(lower(id), lower(?)) > 0 ORDER BY id LIMIT ?;",
-            (object_type, substring, int(limit)),
-        ).fetchall()
-        return [r[0] for r in rows]
+        q = substring.strip()
+        if not q:
+            return []
+        limit = int(limit)
+        out: list[str] = []
+        seen: set = set()
+
+        def take(sql: str, args: tuple) -> None:
+            if len(out) >= limit:
+                return
+            for (oid,) in self._conn.execute(sql, args).fetchall():
+                if oid not in seen:
+                    seen.add(oid)
+                    out.append(oid)
+
+        take("SELECT id FROM knowledge_objects WHERE object_type = ? AND name = ? "
+             "ORDER BY id LIMIT ?;", (object_type, q, limit))
+        take("SELECT id FROM knowledge_objects WHERE object_type = ? AND name >= ? "
+             "AND name < ? ORDER BY name, id LIMIT ?;",
+             (object_type, q, q + "\uffff", limit))
+        # No ORDER BY: the sort is what made this unusable, and the rows are ordered below.
+        remaining = limit - len(out)
+        if remaining > 0:
+            rows = self._conn.execute(
+                "SELECT id FROM knowledge_objects WHERE object_type = ? "
+                "AND instr(lower(id), lower(?)) > 0 LIMIT ?;",
+                (object_type, q, remaining + len(seen))).fetchall()
+            for oid in sorted(r[0] for r in rows):
+                if oid not in seen and len(out) < limit:
+                    seen.add(oid)
+                    out.append(oid)
+        return out[:limit]
 
     def list_objects_under(self, prefix: str, include_stubs: bool = False) -> list:
         """Objects whose id starts with `prefix`, as a range scan on the primary key.
