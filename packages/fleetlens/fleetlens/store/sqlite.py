@@ -12,6 +12,11 @@ import sqlite3
 import struct
 from typing import Optional
 
+try:                                  # optional: only the semantic tier benefits
+    import numpy as _np
+except ImportError:                     # pragma: no cover - exercised by the fallback test
+    _np = None
+
 from .base import ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
 from .models import STUB_SOURCE, KnowledgeObject, Relationship, make_stub_object
 
@@ -114,6 +119,7 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
 
         self._path = None if path == ":memory:" else path
         self._sig = None
+        self._vec_cache: dict = {}
         if read_only:
             import os
             self._conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
@@ -156,6 +162,7 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
             return False
         old = self._conn
         self._conn, self._sig = conn, sig
+        self._vec_cache.clear()       # a swapped-in index has different vectors
         old.close()
         return True
 
@@ -361,6 +368,7 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
             "vector=excluded.vector, updated_at=datetime('now');",
             (object_id, object_type, model, int(dim), summary, content_hash, _pack(vector)),
         )
+        self._vec_cache.pop((object_type, model), None)
 
     def enrichment_hashes(self, object_type: str, model: str) -> dict[str, str]:
         rows = self._conn.execute(
@@ -368,13 +376,50 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
             (object_type, model)).fetchall()
         return {r[0]: r[1] for r in rows}
 
-    def search(self, vector, object_type, model, limit=5) -> list[tuple[str, float]]:
+    def _vector_block(self, object_type: str, model: str):
+        """Every stored vector for this type and model, held in memory.
+
+        Read once rather than per query. Reading them back out of SQLite and unpacking each
+        into a Python list allocated roughly fourteen million float objects on a real fleet,
+        every single search, which cost more than the arithmetic did.
+        """
+        key = (object_type, model)
+        hit = self._vec_cache.get(key)
+        if hit is not None:
+            return hit
         rows = self._conn.execute(
-            "SELECT object_id, vector FROM enrichments WHERE object_type=? AND model=?;",
-            (object_type, model)).fetchall()
-        scored = [(oid, _cosine(vector, _unpack(blob))) for oid, blob in rows]
-        scored.sort(key=lambda t: t[1], reverse=True)
-        return scored[:limit]
+            "SELECT object_id, vector FROM enrichments WHERE object_type=? AND model=? "
+            "ORDER BY object_id;", (object_type, model)).fetchall()
+        ids = [r[0] for r in rows]
+        if _np is not None and rows:
+            dim = len(rows[0][1]) // 4
+            mat = _np.frombuffer(b"".join(r[1] for r in rows),
+                                 dtype="<f4").reshape(len(rows), dim)
+            # Unit rows, so a query only needs its own norm and the comparison is one
+            # matrix-vector product.
+            norms = _np.linalg.norm(mat, axis=1, keepdims=True)
+            block = (ids, mat / _np.where(norms == 0, 1.0, norms))
+        else:
+            block = (ids, [_unpack(r[1]) for r in rows])
+        self._vec_cache[key] = block
+        return block
+
+    def search(self, vector, object_type, model, limit=5) -> list[tuple[str, float]]:
+        ids, mat = self._vector_block(object_type, model)
+        if not ids:
+            return []
+        limit = max(1, min(int(limit), len(ids)))
+        if _np is None:
+            scored = [(oid, _cosine(vector, v)) for oid, v in zip(ids, mat)]
+            scored.sort(key=lambda t: (-t[1], t[0]))
+            return scored[:limit]
+        q = _np.asarray(vector, dtype="<f4")
+        qn = float(_np.linalg.norm(q)) or 1.0
+        scores = (mat @ q) / qn
+        # Only the top `limit` need ordering; partition avoids sorting the whole fleet.
+        top = _np.argpartition(-scores, limit - 1)[:limit]
+        top = top[_np.argsort(-scores[top], kind="stable")]
+        return [(ids[i], float(scores[i])) for i in top]
 
     def summary_of(self, object_id: str) -> Optional[str]:
         row = self._conn.execute(

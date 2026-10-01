@@ -31,8 +31,13 @@ symbols = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0"]
 callgraph = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0"]
 # The MCP server. Pinned <2.0 (2.0 removed mcp.server.fastmcp).
 server = ["mcp>=1.2.0,<2.0"]
+# Vectorised similarity search. Optional on purpose: without it semantic search still
+# works, it just scores in Python, which is fine for hundreds of vectors and not for tens
+# of thousands. The deterministic core never touches it.
+search = ["numpy>=1.24"]
 # Everything needed to try it end-to-end.
-all = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0", "mcp>=1.2.0,<2.0"]
+all = ["tree-sitter>=0.23", "tree-sitter-language-pack>=0.9.0", "mcp>=1.2.0,<2.0",
+       "numpy>=1.24"]
 
 [project.urls]
 Homepage = "https://github.com/tata1mg/fleetlens"

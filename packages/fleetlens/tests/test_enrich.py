@@ -251,29 +251,44 @@ def test_the_embedding_model_is_loaded_before_any_summarising():
 def test_an_http_error_carries_the_server_s_own_explanation(monkeypatch):
     """"HTTP Error 500: Internal Server Error" says nothing. Ollama puts the real cause in
     the body, and for a runner the kernel killed that is the whole diagnosis."""
-    import http.server
-    import threading
+    import io
+    import urllib.error
 
     from fleetlens.enrich import providers
 
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def do_POST(self):
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(b'{"error":"llama runner process has terminated: signal: killed"}')
+    def raise_500(*a, **kw):
+        raise urllib.error.HTTPError(
+            "http://x/api/generate", 500, "Internal Server Error", {},
+            io.BytesIO(b'{"error":"llama runner process has terminated: signal: killed"}'))
 
-        def log_message(self, *a):
-            pass
-
-    srv = http.server.HTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    monkeypatch.setattr(providers.urllib.request, "urlopen", raise_500)
     monkeypatch.setattr(providers, "ATTEMPTS", 1)
-    try:
-        with pytest.raises(providers.ProviderError) as err:
-            providers._post(f"http://127.0.0.1:{srv.server_address[1]}/api/generate", {})
-    finally:
-        srv.shutdown()
+
+    with pytest.raises(providers.ProviderError) as err:
+        providers._post("http://x/api/generate", {})
 
     msg = str(err.value)
     assert "signal: killed" in msg          # the server's own words
     assert "out of memory" in msg           # and what that means on a shared box
+
+
+def test_a_4xx_is_not_retried_but_a_5xx_is(monkeypatch):
+    """A model that does not exist will not start existing because we asked again."""
+    import io
+    import urllib.error
+
+    from fleetlens.enrich import providers
+
+    for code, expected in ((404, 1), (500, 3)):
+        tries = {"n": 0}
+
+        def raise_it(*a, _c=code, **kw):
+            tries["n"] += 1
+            raise urllib.error.HTTPError("http://x", _c, "err", {}, io.BytesIO(b"nope"))
+
+        monkeypatch.setattr(providers.urllib.request, "urlopen", raise_it)
+        monkeypatch.setattr(providers, "ATTEMPTS", 3)
+        monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+        with pytest.raises(providers.ProviderError):
+            providers._post("http://x", {})
+        assert tries["n"] == expected, code
