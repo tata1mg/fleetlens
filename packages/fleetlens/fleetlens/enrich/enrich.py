@@ -11,6 +11,7 @@ The deterministic objects are never mutated; enrichment lives in its own table.
 from __future__ import annotations
 
 import hashlib
+import os
 
 from ..store.base import KnowledgeStore, SemanticStore
 from .providers import EmbeddingProvider, LLMProvider
@@ -49,9 +50,11 @@ def _svc_ground(obj, knowledge: KnowledgeStore) -> tuple[str, str]:
 
 
 #: Objects per batch. Each batch is one embedding request and one commit, so this trades
-#: request size against how much work a crash can cost. 64 keeps the embedder payload small
-#: enough for a local Ollama and the loss window under a couple of minutes.
-BATCH = 64
+#: request overhead against how much work a crash can cost. Small: on a local model a
+#: summary takes seconds, so 5 keeps the loss window under half a minute on a run that
+#: lasts hours, and an embedding request of 5 short texts is cheap enough that the extra
+#: round trips do not show against the LLM time they sit between.
+BATCH = int(os.environ.get("FLEETLENS_ENRICH_BATCH", "5"))
 
 
 def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,

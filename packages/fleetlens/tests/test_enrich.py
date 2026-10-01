@@ -146,36 +146,38 @@ def test_work_is_committed_in_batches_not_only_at_the_end():
     defeated the content-hash resumption that makes a second run cheap."""
     from fleetlens.enrich.enrich import BATCH, enrich
 
+    total = BATCH * 4
+    died_after = BATCH * 2 + 2           # two full batches, then a part-filled one
     store = SqliteStore(":memory:")
-    _fleet(store, BATCH * 2 + 5)
+    _fleet(store, total)
     emb = _Embedder()
 
     with pytest.raises(RuntimeError):
-        enrich(store, _CountingLLM(fail_after=BATCH + 10), emb, kinds=("service",))
+        enrich(store, _CountingLLM(fail_after=died_after), emb, kinds=("service",))
 
-    # the full batch, plus the part-filled one flushed on the way out: an LLM call was paid
-    # for each of those summaries, so none of them are thrown away
-    assert emb.real_batches == [BATCH, 10]
-    assert len(store.enrichment_hashes("service", "test-embed")) == BATCH + 10
+    # the full batches, plus the partial one flushed on the way out: an LLM call was paid
+    # for each of those summaries, so none of them are discarded
+    assert emb.real_batches == [BATCH, BATCH, 2]
+    assert len(store.enrichment_hashes("service", "test-embed")) == died_after
 
 
 def test_a_second_run_only_does_what_is_left():
     from fleetlens.enrich.enrich import BATCH, enrich
 
+    total = BATCH * 4
+    died_after = BATCH * 2 + 2
     store = SqliteStore(":memory:")
-    total = BATCH * 2 + 5
     _fleet(store, total)
 
-    failed_at = BATCH + 10
     with pytest.raises(RuntimeError):
-        enrich(store, _CountingLLM(fail_after=failed_at), _Embedder(), kinds=("service",))
+        enrich(store, _CountingLLM(fail_after=died_after), _Embedder(), kinds=("service",))
 
     resumed = _CountingLLM()
     r = enrich(store, resumed, _Embedder(), kinds=("service",))
 
-    assert r["skipped"] == failed_at              # everything already stored is skipped
-    assert resumed.calls == total - failed_at     # only the remainder costs LLM time
-    assert r["generated"] == total - failed_at
+    assert r["skipped"] == died_after              # everything already stored is skipped
+    assert resumed.calls == total - died_after     # only the remainder costs LLM time
+    assert r["generated"] == total - died_after
 
 
 def test_the_embedder_is_never_sent_the_whole_fleet_at_once():
