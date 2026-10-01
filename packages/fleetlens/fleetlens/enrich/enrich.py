@@ -71,6 +71,15 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
     generated = skipped = 0
     say = progress or (lambda *a: None)
 
+    # Load the embedding model before any summarising. It is loaded lazily on first use,
+    # and that first use is the batch flush, 64 LLM calls in: a model that cannot load, or
+    # is slow to, then costs minutes of finished work rather than a second at the start.
+    say("enrich", {"kind": "startup", "i": 0, "n": 0, "done": 0, "pending": 0,
+                   "skipped": 0, "id": model, "state": "loading embedding model"})
+    probe = embedder.embed(["warm"])
+    if not probe or not probe[0]:
+        raise RuntimeError(f"embedding model {model!r} returned nothing for a test input")
+
     def flush(kind: str, batch: list) -> int:
         if not batch:
             return 0

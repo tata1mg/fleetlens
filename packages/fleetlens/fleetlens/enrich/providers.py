@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Optional, Protocol, runtime_checkable
@@ -27,24 +28,37 @@ class ProviderError(RuntimeError):
 TIMEOUT = int(os.environ.get("FLEETLENS_LLM_TIMEOUT", "600"))
 
 
+#: Attempts per request. Enrichment runs for hours and each model is loaded on its first
+#: use, so a timeout is usually a cold start rather than a broken endpoint: the retry
+#: arrives after the weights are resident and succeeds. Only timeouts are retried. An HTTP
+#: error means the server answered, and answering "model not found" faster will not help.
+ATTEMPTS = int(os.environ.get("FLEETLENS_LLM_ATTEMPTS", "3"))
+
+
 def _post(url: str, payload: dict, headers: Optional[dict] = None,
           timeout: Optional[int] = None) -> dict:
     data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, method="POST",
                                  headers={"Content-Type": "application/json", **(headers or {})})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout or TIMEOUT) as resp:
-            return json.loads(resp.read().decode())
-    except TimeoutError as exc:
-        # Not a URLError, so it escaped the handler below and surfaced as a bare traceback
-        # from deep inside http.client, which says nothing about what to do next.
-        raise ProviderError(
-            f"{url} did not answer within {timeout or TIMEOUT}s.\n"
-            f"  A large model loading for the first time can exceed this. Either warm it\n"
-            f"  first (`ollama run <model> ''`), raise FLEETLENS_LLM_TIMEOUT, or use a\n"
-            f"  smaller model.") from exc
-    except (urllib.error.URLError, OSError) as exc:  # pragma: no cover - network
-        raise ProviderError(f"request to {url} failed: {exc}") from exc
+    limit = timeout or TIMEOUT
+    for attempt in range(1, ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=limit) as resp:
+                return json.loads(resp.read().decode())
+        except TimeoutError as exc:
+            # Not a URLError, so this escaped the handler below and surfaced as a bare
+            # traceback from inside http.client, saying nothing about what to do next.
+            if attempt < ATTEMPTS:
+                time.sleep(2 * attempt)
+                continue
+            raise ProviderError(
+                f"{url} did not answer within {limit}s, after {ATTEMPTS} attempts.\n"
+                f"  A model loading for the first time can exceed this. Either warm it\n"
+                f"  first (`ollama run <model> ''`), raise FLEETLENS_LLM_TIMEOUT, or use\n"
+                f"  a smaller model.") from exc
+        except (urllib.error.URLError, OSError) as exc:  # pragma: no cover - network
+            raise ProviderError(f"request to {url} failed: {exc}") from exc
+    raise ProviderError(f"request to {url} failed")      # unreachable; keeps the type honest
 
 
 def _get(url: str, timeout: int = 15) -> dict:

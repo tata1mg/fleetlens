@@ -124,6 +124,11 @@ class _Embedder:
         self.batches.append(len(texts))
         return [[0.1, 0.2, 0.3] for _ in texts]
 
+    @property
+    def real_batches(self):
+        """Batches excluding the one-text warm-up probe enrich() makes at startup."""
+        return self.batches[1:]
+
 
 def _fleet(store, n):
     from fleetlens.store.models import KnowledgeObject
@@ -150,7 +155,7 @@ def test_work_is_committed_in_batches_not_only_at_the_end():
 
     # the full batch, plus the part-filled one flushed on the way out: an LLM call was paid
     # for each of those summaries, so none of them are thrown away
-    assert emb.batches == [BATCH, 10]
+    assert emb.real_batches == [BATCH, 10]
     assert len(store.enrichment_hashes("service", "test-embed")) == BATCH + 10
 
 
@@ -182,8 +187,8 @@ def test_the_embedder_is_never_sent_the_whole_fleet_at_once():
     emb = _Embedder()
     enrich(store, _CountingLLM(), emb, kinds=("service",))
 
-    assert max(emb.batches) <= BATCH
-    assert sum(emb.batches) == BATCH * 3 + 7
+    assert max(emb.real_batches) <= BATCH
+    assert sum(emb.real_batches) == BATCH * 3 + 7
 
 
 def test_service_grounding_does_not_scan_every_interface_in_the_fleet():
@@ -217,3 +222,25 @@ def test_service_grounding_does_not_scan_every_interface_in_the_fleet():
     assert scans["n"] == 0                      # no full scan at all
     assert "/orders/0" in prompt                # and it still found this service's paths
     assert "/billing/0" not in prompt           # without picking up anyone else's
+
+
+def test_the_embedding_model_is_loaded_before_any_summarising():
+    """It is loaded lazily on first use, and that first use was the batch flush, 64 LLM
+    calls in. An embedder that cannot load then costs minutes of finished work instead of a
+    second at the start."""
+    from fleetlens.enrich.enrich import enrich
+
+    store = SqliteStore(":memory:")
+    _fleet(store, 10)
+
+    class DeadEmbedder:
+        model = "bge-m3"
+
+        def embed(self, texts):
+            raise RuntimeError("model failed to load")
+
+    llm = _CountingLLM()
+    with pytest.raises(RuntimeError, match="failed to load"):
+        enrich(store, llm, DeadEmbedder(), kinds=("service",))
+
+    assert llm.calls == 0        # nothing was summarised before the failure surfaced
