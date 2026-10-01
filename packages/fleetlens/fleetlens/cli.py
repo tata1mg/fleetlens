@@ -127,8 +127,13 @@ def _enrich_printer():
         i, n = d["i"], d["n"]
         rate = i / max(1e-9, time.time() - started)
         left = (n - i) / rate if rate else 0
-        line = (f"  {d['kind']}: {i}/{n}  {d['done']} enriched  {d['skipped']} unchanged"
-                f"  ~{left / 60:.0f} min left")
+        # "committed" and "summarised" are different numbers, and showing only the first
+        # reads as nothing happening for the whole of the first batch: 64 completed LLM
+        # calls reported as "0 enriched".
+        pend = d.get("pending", 0)
+        waiting = f" (+{pend} awaiting commit)" if pend else ""
+        line = (f"  {d['kind']}: {i}/{n}  {d['done']} committed{waiting}"
+                f"  {d['skipped']} unchanged  ~{left / 60:.0f} min left")
         if not tty:
             # Print the first one immediately, then on a timer rather than a count. A
             # count-based interval means the first line of a slow run is minutes away, and

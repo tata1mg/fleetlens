@@ -96,13 +96,15 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
                 if existing.get(obj.id) == chash:
                     skipped += 1
                     say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
-                                   "skipped": skipped, "id": obj.id, "state": "unchanged"})
+                                   "pending": len(batch), "skipped": skipped,
+                                   "id": obj.id, "state": "unchanged"})
                     continue
                 # Announced before the call, not after. The first request to a local model
                 # loads several gigabytes of weights and can take minutes, which is exactly
                 # the stretch where a silent run looks like a hung one.
                 say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
-                               "skipped": skipped, "id": obj.id, "state": "summarising"})
+                               "pending": len(batch), "skipped": skipped,
+                               "id": obj.id, "state": "summarising"})
                 system = _IFACE_SYS if kind == "interface" else _SVC_SYS
                 summary = llm.complete(prompt, system=system, max_tokens=_MAX_TOKENS).strip()
                 summary = summary.split("\n")[0][:300]  # hard output cap
