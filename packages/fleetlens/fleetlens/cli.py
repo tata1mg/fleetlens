@@ -119,7 +119,7 @@ def _enrich_printer():
     """
     tty = sys.stderr.isatty()
     width = 0
-    last_logged = [0]
+    last = {"i": -1, "at": 0.0}
     started = time.time()
 
     def render(_event: str, d: dict) -> None:
@@ -130,8 +130,12 @@ def _enrich_printer():
         line = (f"  {d['kind']}: {i}/{n}  {d['done']} enriched  {d['skipped']} unchanged"
                 f"  ~{left / 60:.0f} min left")
         if not tty:
-            if i - last_logged[0] >= 64 or i == n:
-                last_logged[0] = i
+            # Print the first one immediately, then on a timer rather than a count. A
+            # count-based interval means the first line of a slow run is minutes away, and
+            # a job that has printed nothing is indistinguishable from one that has hung.
+            now = time.time()
+            if last["i"] < 0 or now - last["at"] >= 30 or i == n:
+                last.update(i=i, at=now)
                 print(line, file=sys.stderr, flush=True)
             return
         pad = max(0, width - len(line))
