@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from pathlib import Path
 
 from .export import render as render_graph
@@ -106,6 +107,45 @@ def _count_sources(repo: Path) -> int:
     """Roughly how much source the run had to read, for a files/second figure."""
     from .adapters._walk import iter_files
     return sum(1 for _ in iter_files(Path(repo), (".py", ".ts", ".tsx", ".rb", ".js")))
+
+
+def _enrich_printer():
+    """Progress for the enrichment tier, which is the longest-running thing fleetlens does.
+
+    One LLM call per object and tens of thousands of objects on a real fleet, so a run that
+    prints only at the end is indistinguishable from a hang for most of a day. On a terminal
+    this rewrites one line; in a log it prints a line every batch, which is frequent enough
+    to see movement and rare enough not to fill a disk.
+    """
+    tty = sys.stderr.isatty()
+    width = 0
+    last_logged = [0]
+    started = time.time()
+
+    def render(_event: str, d: dict) -> None:
+        nonlocal width
+        i, n = d["i"], d["n"]
+        rate = i / max(1e-9, time.time() - started)
+        left = (n - i) / rate if rate else 0
+        line = (f"  {d['kind']}: {i}/{n}  {d['done']} enriched  {d['skipped']} unchanged"
+                f"  ~{left / 60:.0f} min left")
+        if not tty:
+            if i - last_logged[0] >= 64 or i == n:
+                last_logged[0] = i
+                print(line, file=sys.stderr, flush=True)
+            return
+        pad = max(0, width - len(line))
+        print("\r" + line + " " * pad, end="", file=sys.stderr, flush=True)
+        width = len(line)
+
+    def done() -> None:
+        nonlocal width
+        if tty and width:
+            print("\r" + " " * width + "\r", end="", file=sys.stderr, flush=True)
+            width = 0
+
+    render.done = done
+    return render
 
 
 def _progress_printer():
@@ -298,7 +338,9 @@ def _cmd_enrich(args) -> int:
                 print(f"fl enrich: re-resolved fleet — {r['edges']} service->service edges "
                       f"({r['async_edges']} async)")
         if summary_kinds:
-            r = enrich(store, llm, embedder, kinds=summary_kinds)
+            eprog = _enrich_printer()
+            r = enrich(store, llm, embedder, kinds=summary_kinds, progress=eprog)
+            eprog.done()
             print(f"fl enrich: {r['generated']} enriched, {r['skipped']} unchanged "
                   f"(model={r['model']}, kinds={','.join(summary_kinds)})")
     finally:
