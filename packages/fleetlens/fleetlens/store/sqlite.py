@@ -230,6 +230,22 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         ).fetchall()
         return [r[0] for r in rows]
 
+    def list_objects_under(self, prefix: str, include_stubs: bool = False) -> list:
+        """Objects whose id starts with `prefix`, as a range scan on the primary key.
+
+        Ids are `<type>:<slug>:<rest>`, so one service's interfaces are a contiguous run.
+        Filtering a full `list_objects` in Python instead meant loading and JSON-parsing
+        every interface in the fleet to find one service's: 111ms to return a single row,
+        and once per service in the enrichment loop.
+        """
+        sql = f"SELECT {_COLS} FROM knowledge_objects WHERE id >= ? AND id < ?"
+        params: list = [prefix, prefix + "\uffff"]
+        if not include_stubs:
+            sql += " AND source <> ?"
+            params.append(STUB_SOURCE)
+        return [_row_to_object(r) for r in
+                self._conn.execute(sql + " ORDER BY id", params).fetchall()]
+
     def list_objects(self, object_type: str, include_stubs: bool = False,
                      limit: Optional[int] = None, offset: int = 0) -> list[KnowledgeObject]:
         sql = f"SELECT {_COLS} FROM knowledge_objects WHERE object_type = ?"

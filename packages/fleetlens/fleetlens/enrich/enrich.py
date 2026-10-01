@@ -35,8 +35,13 @@ def _iface_ground(obj) -> tuple[str, str]:
 
 def _svc_ground(obj, knowledge: KnowledgeStore) -> tuple[str, str]:
     slug = obj.object_id
-    ifaces = knowledge.list_objects("interface")
-    mine = [i.payload.get("path", "") for i in ifaces if i.id.split(":")[1] == slug][:12]
+    # A prefix range, not a scan: this runs once per service, and loading every interface
+    # in the fleet each time cost 155ms a service before any LLM work began.
+    under = getattr(knowledge, "list_objects_under", None)
+    ifaces = (under(f"interface:{slug}:") if under
+              else [i for i in knowledge.list_objects("interface")
+                    if i.id.split(":")[1] == slug])
+    mine = [i.payload.get("path", "") for i in ifaces][:12]
     prompt = (f"Service: {slug}\nEndpoints: {', '.join(mine) or '(none discovered)'}\n"
               "In one short sentence, describe what this service is responsible for. "
               "Reply with only the sentence.")
@@ -92,12 +97,15 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
                 say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
                                "skipped": skipped, "id": obj.id, "state": "unchanged"})
                 continue
+            # Announced before the call, not after. The first request to a local model
+            # loads several gigabytes of weights and can take minutes, which is exactly the
+            # stretch where a silent run looks like a hung one.
+            say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
+                           "skipped": skipped, "id": obj.id, "state": "summarising"})
             system = _IFACE_SYS if kind == "interface" else _SVC_SYS
             summary = llm.complete(prompt, system=system, max_tokens=_MAX_TOKENS).strip()
             summary = summary.split("\n")[0][:300]  # hard output cap
             batch.append((obj, summary, chash))
-            say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
-                           "skipped": skipped, "id": obj.id, "state": "summarised"})
             if len(batch) >= BATCH:
                 generated += flush(kind, batch)
                 batch = []

@@ -183,3 +183,36 @@ def test_the_embedder_is_never_sent_the_whole_fleet_at_once():
 
     assert max(emb.batches) <= BATCH
     assert sum(emb.batches) == BATCH * 3 + 7
+
+
+def test_service_grounding_does_not_scan_every_interface_in_the_fleet():
+    """It runs once per service. Loading and JSON-parsing every interface each time cost
+    155ms a service on a real index, 33 seconds before any LLM work began."""
+    from fleetlens.enrich.enrich import _svc_ground
+
+    store = SqliteStore(":memory:")
+    for svc in ("orders", "billing"):
+        store.upsert_object(KnowledgeObject(
+            object_type="service", object_id=svc, name=svc, summary=None, version="1",
+            source="static", generation_strategy="index", last_generated_at=None,
+            embed_text=None, payload={}))
+        for i in range(5):
+            store.upsert_object(KnowledgeObject(
+                object_type="interface", object_id=f"{svc}:GET:/{svc}/{i}", name=f"/{svc}/{i}",
+                summary=None, version="1", source="static", generation_strategy="index",
+                last_generated_at=None, embed_text=None, payload={"path": f"/{svc}/{i}"}))
+    store.commit()
+
+    scans = {"n": 0}
+    real = store.list_objects
+
+    def counted(kind, *a, **kw):
+        scans["n"] += 1
+        return real(kind, *a, **kw)
+
+    store.list_objects = counted
+    prompt, _ = _svc_ground(store.get("service:orders"), store)
+
+    assert scans["n"] == 0                      # no full scan at all
+    assert "/orders/0" in prompt                # and it still found this service's paths
+    assert "/billing/0" not in prompt           # without picking up anyone else's

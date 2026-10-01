@@ -92,7 +92,13 @@ class RelationshipService:
                 resp["did_you_mean"] = hits
             return resp
         prefix = f"interface:{svc.object_id}:"
-        objs = [o for o in self.knowledge.list_objects("interface") if o.id.startswith(prefix)]
+        # Ids are `<type>:<slug>:<rest>`, so one service's interfaces are a contiguous run
+        # on the primary key. Scanning every interface in the fleet and filtering in Python
+        # took 111ms to return a single row.
+        under = getattr(self.knowledge, "list_objects_under", None)
+        objs = (under(prefix) if under
+                else [o for o in self.knowledge.list_objects("interface")
+                      if o.id.startswith(prefix)])
         objs.sort(key=lambda o: (o.payload.get("type") or "", o.payload.get("path") or "",
                                  o.payload.get("method") or ""))
         rows = []
