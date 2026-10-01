@@ -1,0 +1,19 @@
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_5651f818cfdb08 122,133-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "d497b3420666f93c67d86cacf4819ad0be6c90e8",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
