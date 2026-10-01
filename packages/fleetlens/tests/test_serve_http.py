@@ -134,3 +134,30 @@ def test_reload_keeps_serving_when_the_file_goes_missing(tmp_path):
     assert ro.reload_if_changed() is False
     assert ro.index_info()["services"] == 1  # still answering from the open descriptor
     ro.close()
+
+
+def test_a_broken_dependency_is_not_reported_as_an_mcp_version_problem(capsys, monkeypatch):
+    """mcp failing to import because pydantic is v1 is not an mcp version problem, and
+    saying it is sends someone to reinstall the package that was working."""
+    import argparse
+    import builtins
+
+    from fleetlens import cli
+
+    real_import = builtins.__import__
+
+    def boom(name, *a, **kw):
+        if name.startswith("mcp"):
+            raise ImportError("cannot import name 'TypeAdapter' from 'pydantic'",
+                              name="pydantic")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", boom)
+    rc = cli._cmd_serve(argparse.Namespace(
+        db=":memory:", http=True, host="127.0.0.1", port=8081, embed_model="",
+        embed_provider="ollama", base_url="", api_key_env="", token_env="T", insecure=True))
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "pydantic" in err                     # names what actually failed
+    assert "mcp>=1.2.0,<2.0" not in err          # and does not blame mcp's version

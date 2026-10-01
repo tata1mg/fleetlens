@@ -317,16 +317,26 @@ def _cmd_serve(args) -> int:
     try:
         from mcp.server.fastmcp import FastMCP
     except ImportError as exc:
-        # Two different failures land here and they need different fixes: the package is
-        # absent, or it is present at a version that moved this module (mcp 2.0 dropped
-        # mcp.server.fastmcp). Reporting only the first sends people to reinstall
-        # something they already have.
+        # Three different failures land here and they need three different fixes. Guessing
+        # between them is worse than saying nothing: a message naming the wrong package
+        # sends someone to reinstall something that was never the problem. ImportError
+        # carries the module that actually failed, so use it rather than assume.
         import importlib.util
+        failed = (exc.name or "").split(".")[0]
         if importlib.util.find_spec("mcp") is None:
-            print("fl serve: MCP not installed — pip install 'fleetlens[server]'",
+            print("fl serve: MCP is not installed.\n"
+                  "  pip install 'fleetlens[server]'", file=sys.stderr)
+        elif failed and failed != "mcp":
+            # mcp is here, but something it depends on is missing or too old. The classic
+            # is pydantic v1 in the environment, where `TypeAdapter` does not exist.
+            print(f"fl serve: MCP is installed, but importing it failed on '{failed}'.\n"
+                  f"  {exc}\n"
+                  f"  That is a dependency problem, not an MCP version problem. Try:\n"
+                  f"    pip install -U '{failed}'      and then      pip check",
                   file=sys.stderr)
         else:
-            print(f"fl serve: installed MCP is not compatible ({exc}).\n"
+            print(f"fl serve: the installed MCP is not compatible.\n"
+                  f"  {exc}\n"
                   "  fleetlens needs mcp>=1.2.0,<2.0; 2.0 removed mcp.server.fastmcp.\n"
                   "  pip install 'mcp>=1.2.0,<2.0'", file=sys.stderr)
         return 2
