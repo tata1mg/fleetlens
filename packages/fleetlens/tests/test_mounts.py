@@ -206,3 +206,51 @@ async def ping(request): ...
     })
     found = _paths(tmp_path)
     assert all(f.endswith("/ping") for f in found)
+
+
+def test_a_local_variable_does_not_erase_a_router_s_prefix(tmp_path):
+    """A handler reusing the router's name as a local is an ordinary thing to write, and
+    short names invite it. Reading those assignments as declarations let the last one win,
+    so `/v1` disappeared from fourteen real routes."""
+    _write(tmp_path, {
+        "app/routes/eta.py": '''
+import random
+from sanic import Blueprint
+
+eta = Blueprint("eta", version=1)
+
+@eta.route("/skus/eta", methods=["POST"])
+async def skus_eta(request): ...
+
+def _fake_eta(secs_in_hour):
+    eta = random.randrange(secs_in_hour * 2, secs_in_hour * 200)
+    return eta
+''',
+    })
+    assert _paths(tmp_path) == {"POST /v1/skus/eta"}
+
+
+def test_a_router_re_exported_through_packages_keeps_its_mount(tmp_path):
+    """The mount names the router by the path it was imported from, which for a re-export
+    is not where it was declared. Thirty-one of one service's sixty paths lost their `/v1`
+    to this, and a pure re-export names neither a framework nor a router type, so the file
+    has to be read even though nothing in it looks relevant."""
+    _write(tmp_path, {
+        "app/routes/v1/views/tracker/water.py": '''
+from fastapi import APIRouter
+water_routes = APIRouter(prefix="/tracker/water")
+
+@water_routes.post("/log")
+async def log_water(): ...
+''',
+        "app/routes/v1/views/tracker/__init__.py": "from .water import water_routes\n",
+        "app/routes/v1/views/__init__.py": "from .tracker import water_routes\n",
+        "app/routes/v1/__init__.py": '''
+from fastapi import APIRouter
+from app.routes.v1.views import water_routes
+
+v1_router = APIRouter(prefix="/v1")
+v1_router.include_router(water_routes)
+''',
+    })
+    assert _paths(tmp_path) == {"POST /v1/tracker/water/log"}

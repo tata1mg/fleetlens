@@ -158,3 +158,44 @@ end
     # params.get is a hash read, not a request
     assert all("params" not in s.expr for s in skipped)
     assert any(s.reason == "non-literal-url" for s in skipped)
+
+
+def test_a_nested_resource_hangs_off_its_parent_s_id(tmp_path):
+    """`resources :orders do resources :items end` serves /orders/:order_id/items. Dropping
+    the parent's id segment produced a path the service does not answer on, and shortened
+    every route under a nesting -- fifty-one sites across three real Rails services.
+
+    `member` and `collection` are computed from the bare resource, so they are unaffected:
+    a member route keeps its own `:id` and a collection route has none.
+    """
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "config" / "routes.rb").write_text('''
+Rails.application.routes.draw do
+  namespace :api do
+    resources :orders, only: [] do
+      resources :sample_collection_pools, only: [:index] do
+        collection do
+          get 'fetch_payment_modes'
+        end
+      end
+      member do
+        get 'slots'
+      end
+      collection do
+        get 'recent'
+      end
+    end
+    resource :profile, only: [] do
+      resources :avatars, only: [:index]
+    end
+  end
+end
+''')
+    found = {f"{i.method} {i.path}" for i in RailsRouteAdapter().discover(tmp_path)}
+
+    assert "GET /api/orders/:order_id/sample_collection_pools" in found
+    assert ("GET /api/orders/:order_id/sample_collection_pools/fetch_payment_modes"
+            in found)
+    assert "GET /api/orders/:id/slots" in found          # member keeps its own :id
+    assert "GET /api/orders/recent" in found             # collection has none
+    assert "GET /api/profile/avatars" in found           # singular parent adds no id

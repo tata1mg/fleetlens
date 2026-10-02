@@ -280,3 +280,33 @@ def test_fetch(m): ...
 async def amend(order_id: str): ...
 ''')
     assert {f.name for f in found} == {"GET /health", "PATCH /orders/{order_id}"}
+
+
+def test_two_routes_collapsing_onto_one_path_are_recorded(tmp_path):
+    """Only one route can serve a path, so the repeat collapses either way. What must not
+    happen is it collapsing silently: a real service declared /merchant/generate_hash twice,
+    once with a per-route version override we did not read, and the second endpoint left no
+    trace anywhere. The surviving interface now carries both source lines, and the collision
+    is a skipped site `fl doctor` can report.
+    """
+    from fleetlens.adapters.registry import discover_interfaces
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "routes.py").write_text('''
+from sanic import Blueprint
+
+merchant = Blueprint("merchant", version=4)
+
+@merchant.route("/merchant/generate_hash", methods=["POST"])
+async def generate_hash(request): ...
+
+@merchant.route("/merchant/generate_hash", methods=["POST"], version=5)
+async def generate_hash_v5(request): ...
+''')
+    skipped: list = []
+    found = discover_interfaces(tmp_path, skipped)
+
+    assert [f.name for f in found] == ["POST /v4/merchant/generate_hash"]
+    assert len(found[0].evidence) == 2                      # both declarations are kept
+    dupes = [s for s in skipped if s.reason == "duplicate-path"]
+    assert len(dupes) == 1 and dupes[0].method == "POST"

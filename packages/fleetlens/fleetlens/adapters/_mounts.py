@@ -103,6 +103,24 @@ def _relative_base(module: str, is_pkg: bool, level: int) -> str:
     return ".".join(parts[:len(parts) - up]) if 0 <= up <= len(parts) else ""
 
 
+def _module_level(tree: ast.Module):
+    """Every node outside a function body.
+
+    `ast.walk` descends into handlers, where a short name like `eta`, `order` or `cart` is
+    frequently reused as a local. Reading those as router declarations let the last one win,
+    which erased the real router's prefix. Conditionals, loops and `try` at module level are
+    still descended into, since a router may well be declared inside one.
+    """
+    stack = list(tree.body)
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda,
+                             ast.ClassDef)):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+
+
 class MountGraph:
     """Resolved URL prefixes for every router variable in a repository.
 
@@ -114,6 +132,7 @@ class MountGraph:
         self._own: dict = {}          # "module.var" -> prefix declared on the router
         self._flask: set = set()      # keys declared in a module that imports flask
         self._parents: dict = {}      # child key -> [(parent key, prefix from the mount)]
+        self._alias: dict = {}        # re-exported name -> where it was declared
         self._modules: set = set()
         self._memo: dict = {}
         self._build()
@@ -126,7 +145,11 @@ class MountGraph:
                 text = path.read_text(encoding="utf-8", errors="replace")
             except OSError:
                 continue
-            if not any(m in text for m in _MARKERS):
+            # A package __init__ is read whichever way it looks, because a pure re-export
+            # names neither a framework nor a router type -- `from .routes import bp` is
+            # the whole file -- and skipping it breaks the chain from a mount to the
+            # module that declared what is being mounted.
+            if not (any(m in text for m in _MARKERS) or path.name == "__init__.py"):
                 continue
             tree = parse(text, path)
             if tree is None:
@@ -134,6 +157,34 @@ class MountGraph:
             module, is_pkg = _module_of(path, self.repo)
             self._modules.add(module)
             self._scan(tree, module, is_pkg)
+        self._follow_aliases()
+
+    def _follow_aliases(self) -> None:
+        """Re-key the graph onto declarations, now that every module has been read.
+
+        Edges are recorded under the name used at the mount site, which for a re-exported
+        router is an alias. Resolving during the scan is not possible because the module
+        holding the declaration may not have been read yet, so it happens once at the end.
+        """
+        def declared(key: str) -> str:
+            seen: set = set()
+            while key in self._alias and key not in seen and len(seen) < _MAX_DEPTH:
+                seen.add(key)
+                key = self._alias[key]
+            return key
+
+        parents: dict = {}
+        for child, edges in self._parents.items():
+            parents.setdefault(declared(child), []).extend(
+                (declared(parent), edge) for parent, edge in edges)
+        self._parents = parents
+        own: dict = {}
+        for key, prefix in self._own.items():
+            k = declared(key)
+            if prefix or k not in own:
+                own[k] = prefix
+        self._own = own
+        self._flask = {declared(k) for k in self._flask}
 
     def _scan(self, tree: ast.Module, module: str, is_pkg: bool) -> None:
         imports = self._imports(tree, module, is_pkg)
@@ -145,16 +196,39 @@ class MountGraph:
                 return ""
             return imports.get(node.id) or f"{module}.{node.id}"
 
+        # Declarations come from module level only. A router is declared once where the
+        # module can see it; a name reused inside a function is a different variable that
+        # happens to be spelled the same, and `eta = random.randrange(...)` in a handler
+        # was overwriting the `eta` blueprint's prefix with nothing.
+        handled, local = set(), set()
+        for node in _module_level(tree):
+            if not (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and isinstance(node.value, ast.Call)):
+                continue
+            key = f"{module}.{node.targets[0].id}"
+            prefix = own_prefix(node.value)
+            # Belt and braces for a name legitimately rebound at module level: a
+            # declaration that carries a prefix is the one worth keeping.
+            if prefix or key not in self._own:
+                self._own[key] = prefix
+            if flask:
+                self._flask.add(key)
+            self._link(node.value, key, key_of)
+            handled.add(id(node.value))
+            local.add(node.targets[0].id)
+
+        # A name a module imports and does not declare is that module's alias for the one
+        # it came from. Packages re-export routers through several `__init__.py` layers, so
+        # a mount names `pkg.router` while the declaration lives at `pkg.sub.mod.router`.
+        for name, target in imports.items():
+            if name not in local:
+                self._alias[f"{module}.{name}"] = target
+
+        # Mountings are read from everywhere, because an application factory that wires the
+        # routers together inside a function is an ordinary way to build one.
         for node in ast.walk(tree):
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 \
-                    and isinstance(node.targets[0], ast.Name) \
-                    and isinstance(node.value, ast.Call):
-                key = f"{module}.{node.targets[0].id}"
-                self._own[key] = own_prefix(node.value)
-                if flask:
-                    self._flask.add(key)
-                self._link(node.value, key, key_of)
-            elif isinstance(node, ast.Call):
+            if isinstance(node, ast.Call) and id(node) not in handled:
                 self._link(node, None, key_of)
 
     def _link(self, call: ast.Call, as_key, key_of) -> None:

@@ -19,18 +19,44 @@ ADAPTERS = [PythonWebAdapter(), TSWebAdapter(), RailsRouteAdapter(), MessagingAd
 
 
 def discover_interfaces(repo: Path, skipped: list[SkippedSite] | None = None) -> list[Interface]:
+    """Every interface in the repo, with one path reported once.
+
+    Only one route can serve a path, so a repeated (method, path) collapses either way.
+    What matters is which kind of repeat it was. Two adapters describing the same endpoint
+    is ordinary and silent. Two routes from the *same* adapter landing on one path means
+    the repo declared two endpoints and we read them as one, which happens when a path was
+    composed wrongly -- a per-route `version=` we ignored, a prefix we failed to apply.
+
+    That second kind used to be dropped without a trace, so a service lost an endpoint
+    nobody could discover was missing. It is now recorded as a skipped site, and the
+    surviving interface carries both source locations.
+    """
     repo = Path(repo)
-    seen: set[tuple[str, str]] = set()
+    seen: dict[tuple[str, str], tuple[str, Interface]] = {}
     out: list[Interface] = []
     for adapter in ADAPTERS:
         if not adapter.applies(repo):
             continue
         for iface in adapter.discover(repo, skipped):
             key = (iface.method, iface.path)
-            if key in seen:
+            prev = seen.get(key)
+            if prev is None:
+                seen[key] = (adapter.name, iface)
+                out.append(iface)
                 continue
-            seen.add(key)
-            out.append(iface)
+            owner, kept = prev
+            if owner != adapter.name:
+                continue                       # one endpoint, two adapters: expected
+            for e in iface.evidence:           # keep the trail to both declarations
+                if e not in kept.evidence:
+                    kept.evidence.append(e)
+            if skipped is not None:
+                file, _, line = (iface.evidence[0] if iface.evidence else "").rpartition(":")
+                skipped.append(SkippedSite(
+                    kind="interface", reason="duplicate-path", file=file or "?",
+                    line=int(line) if line.isdigit() else 0, expr=iface.path,
+                    snippet=f"also declared at {kept.evidence[0] if kept.evidence else '?'}",
+                    names=[], method=iface.method))
     return out
 
 

@@ -53,6 +53,21 @@ _SINGULAR_ACTIONS = {
 }
 
 
+def _singular(name: str) -> str:
+    """`orders` -> `order`, for the `:<parent>_id` segment Rails nests children under.
+
+    Rails singularises with ActiveSupport's inflections, which carry a table of irregular
+    forms this cannot reproduce. The common English endings are handled and anything else
+    falls back to dropping a trailing `s`; an imperfect parameter name still yields the
+    right path shape, which is what distinguishes one endpoint from another.
+    """
+    for suffix, replacement in (("ies", "y"), ("ses", "s"), ("xes", "x"),
+                                ("zes", "z"), ("ches", "ch"), ("shes", "sh")):
+        if name.endswith(suffix) and len(name) > len(suffix):
+            return name[:-len(suffix)] + replacement
+    return name[:-1] if name.endswith("s") and not name.endswith("ss") else name
+
+
 def _join(prefix: list, path: str) -> str:
     segs = [s.strip("/") for s in prefix if s and s.strip("/")]
     tail = (path or "").strip()
@@ -194,8 +209,13 @@ class _Walker:
                 self.emit(method, _join(base, suffix), node, f"{name}#{action}")
         block = R.block_of(node)
         if block is not None:
-            # nested routes live under the resource; member/collection refine it further
-            self.visit(block, base, (base, singular))
+            # Everything inside the block is nested under one member of the resource, so it
+            # carries that member's id: `resources :orders do resources :items end` serves
+            # /orders/:order_id/items, not /orders/items. A singular `resource` has no id to
+            # nest under. `member` and `collection` are computed from the bare base instead,
+            # which is why `resource` is passed unchanged.
+            nested = base if singular else base + [f":{_singular(name)}_id"]
+            self.visit(block, nested, (base, singular))
 
 
 def _controller_actions(repo: Path) -> dict:
