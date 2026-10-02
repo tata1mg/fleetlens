@@ -96,3 +96,73 @@ def test_index_info_counts_the_symbols_that_are_there(tmp_path):
     store.commit()
 
     assert store.index_info()["symbols"] == 1
+
+
+def test_index_info_is_computed_once_on_a_served_index(tmp_path):
+    """Three full scans over half a million rows, for the tool clients are told to call
+    first. A read-only store is a snapshot, so the answer cannot change until the file is
+    swapped, and `reload_if_changed` is what notices that."""
+    from fleetlens.store.models import KnowledgeObject
+    from fleetlens.store.sqlite import SqliteStore
+
+    db = tmp_path / "f.db"
+    w = SqliteStore(str(db))
+    w.upsert_object(KnowledgeObject(
+        object_type="service", object_id="orders", name="orders", summary=None,
+        version="unknown", source="static", generation_strategy="index",
+        last_generated_at=None, embed_text=None, payload={}))
+    w.commit(); w.close()
+
+    r = SqliteStore(str(db), read_only=True)
+    first = r.index_info()
+    assert first["services"] == 1
+    statements = []
+    r._conn.set_trace_callback(statements.append)
+    assert r.index_info() == first
+    r._conn.set_trace_callback(None)
+    assert statements == []                 # answered from the cached snapshot
+
+    # a writable store's counts genuinely move, so it is never cached
+    w2 = SqliteStore(str(db))
+    before = w2.index_info()["services"]
+    w2.upsert_object(KnowledgeObject(
+        object_type="service", object_id="billing", name="billing", summary=None,
+        version="unknown", source="static", generation_strategy="index",
+        last_generated_at=None, embed_text=None, payload={}))
+    w2.commit()
+    assert w2.index_info()["services"] == before + 1
+
+
+def test_a_served_store_can_be_read_from_several_threads(tmp_path):
+    """A sqlite3 connection belongs to the thread that made it, and the server now answers
+    on a worker pool. Without a connection per thread every call off the main thread would
+    raise, which is a server that works until it is used by two people at once."""
+    import threading
+
+    from fleetlens.store.models import KnowledgeObject
+    from fleetlens.store.sqlite import SqliteStore
+
+    db = tmp_path / "f.db"
+    w = SqliteStore(str(db))
+    for n in range(5):
+        w.upsert_object(KnowledgeObject(
+            object_type="service", object_id=f"s{n}", name=f"s{n}", summary=None,
+            version="unknown", source="static", generation_strategy="index",
+            last_generated_at=None, embed_text=None, payload={"interface_count": n}))
+    w.commit(); w.close()
+
+    r = SqliteStore(str(db), read_only=True)
+    seen, errors = [], []
+
+    def read():
+        try:
+            seen.append(len(r.service_summaries()))
+        except Exception as exc:          # noqa: BLE001
+            errors.append(exc)
+
+    threads = [threading.Thread(target=read) for _ in range(8)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    assert errors == []
+    assert seen == [5] * 8

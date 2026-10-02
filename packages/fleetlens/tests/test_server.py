@@ -6,12 +6,20 @@ from fleetlens.server.tools import register_all
 
 
 class _FakeMCP:
+    """Collects the registered tools, unwrapped.
+
+    Each tool is wrapped so it runs on a worker thread rather than blocking the event
+    loop, which makes the registered object a coroutine function. `functools.wraps` keeps
+    the original reachable through `__wrapped__`, so these tests exercise the same body
+    without needing an event loop to do it.
+    """
+
     def __init__(self):
         self.tools = {}
 
     def tool(self):
         def deco(fn):
-            self.tools[fn.__name__] = fn
+            self.tools[fn.__name__] = getattr(fn, "__wrapped__", fn)
             return fn
         return deco
 

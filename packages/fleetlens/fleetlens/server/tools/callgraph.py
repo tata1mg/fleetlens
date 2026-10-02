@@ -5,6 +5,7 @@ Served from the deterministic static call graph. Traversal is bounded (depth + n
 from __future__ import annotations
 
 from ...server.app import ServiceContext
+from ._offload import offloaded
 
 _MAX_DEPTH = 6
 
@@ -19,6 +20,7 @@ def _clamp(value, default: int, lo: int, hi: int) -> int:
 
 def register(mcp, ctx: ServiceContext) -> None:
     @mcp.tool()
+    @offloaded
     def get_endpoint_call_graph(interface_id: str, max_depth: int = 3) -> dict:
         """Trace an endpoint into the code: from an interface to its handler and everything
         that handler transitively calls. Use for impact analysis ("what does changing this
@@ -28,6 +30,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return ctx.callgraph.endpoint_call_graph(interface_id, _clamp(max_depth, 3, 1, _MAX_DEPTH))
 
     @mcp.tool()
+    @offloaded
     def get_callees(symbol_id: str, max_depth: int = 2) -> dict:
         """What a function/method calls, transitively — its downstream call tree. `symbol_id`
         is a fully-qualified code_symbol id (from find_symbol or an endpoint trace). Only
@@ -35,18 +38,21 @@ def register(mcp, ctx: ServiceContext) -> None:
         return ctx.callgraph.neighbors(symbol_id, "out", _clamp(max_depth, 2, 1, _MAX_DEPTH))
 
     @mcp.tool()
+    @offloaded
     def get_callers(symbol_id: str, max_depth: int = 2) -> dict:
         """Who calls a function/method, transitively — its upstream callers (the blast radius
         of changing it). `symbol_id` is a fully-qualified code_symbol id."""
         return ctx.callgraph.neighbors(symbol_id, "in", _clamp(max_depth, 2, 1, _MAX_DEPTH))
 
     @mcp.tool()
+    @offloaded
     def get_symbol(symbol_id: str) -> dict:
         """Look up one code symbol: location (path + line) and how many direct callers/callees
         it has. Returns a not_found response (with did_you_mean) if unknown."""
         return ctx.callgraph.symbol(symbol_id)
 
     @mcp.tool()
+    @offloaded
     def find_symbol(query: str, limit: int = 20) -> dict:
         """Find code_symbol ids by a substring of their id — a method name, class, or file
         fragment (e.g. "OrderManager.get" or "managers/db.py"). The entry point to the other

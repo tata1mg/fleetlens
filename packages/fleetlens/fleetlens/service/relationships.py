@@ -12,6 +12,15 @@ class RelationshipService:
         self.knowledge = knowledge
 
     def list_services(self) -> dict[str, Any]:
+        # A store that can pull the two counts out of the payload itself does so; building
+        # an object and parsing a JSON document per service in Python was most of the cost
+        # of this call. Any store that cannot still answers the slower way.
+        summaries = getattr(self.knowledge, "service_summaries", None)
+        if summaries is not None:
+            rows = summaries()
+            return {"status": "ok", "count": len(rows),
+                    "services": [{"id": i, "name": n, "interfaces": ifaces, "symbols": syms}
+                                 for i, n, ifaces, syms in rows]}
         objs = self.knowledge.list_objects("service")
         return {"status": "ok", "count": len(objs),
                 "services": [{"id": o.id, "name": o.name,

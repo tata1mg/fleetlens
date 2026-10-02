@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from ...server.app import ServiceContext
+from ._offload import offloaded
 
 
 def _limit(v) -> int:
@@ -20,6 +21,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return
 
     @mcp.tool()
+    @offloaded
     def discover_interfaces(query: str, limit: int = 5) -> dict:
         """Find endpoints by meaning, e.g. "the endpoint that sends order-confirmation
         emails". Ranked semantic search over LLM-generated interface summaries (needs the
@@ -28,6 +30,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return ctx.discovery.discover(query, "interface", _limit(limit))
 
     @mcp.tool()
+    @offloaded
     def discover_services(query: str, limit: int = 5) -> dict:
         """Find services by what they do, in natural language. Ranked semantic search over
         LLM-generated service summaries (needs the enrichment tier). Returns service ids +

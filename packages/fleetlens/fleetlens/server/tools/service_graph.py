@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from ...server.app import ServiceContext
+from ._offload import offloaded
 
 
 def register(mcp, ctx: ServiceContext) -> None:
     @mcp.tool()
+    @offloaded
     def get_service_graph(min_confidence: str = "") -> dict:
         """THE WHOLE microservice dependency graph in one call — every service and every
         service-to-service edge across all repositories.
@@ -28,6 +30,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return ctx.relationships.graph(min_confidence)
 
     @mcp.tool()
+    @offloaded
     def get_index_info() -> dict:
         """When this index was built, and how much it covers.
 
@@ -38,6 +41,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return {"status": "ok", **ctx.store.index_info()}
 
     @mcp.tool()
+    @offloaded
     def list_services() -> dict:
         """List every indexed microservice in this codebase, with interface and symbol
         counts. Use to discover what services exist before drilling in. For dependencies
@@ -45,6 +49,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return ctx.relationships.list_services()
 
     @mcp.tool()
+    @offloaded
     def list_interfaces(service_id: str) -> dict:
         """Every interface a service exposes: id, method, path, handler, and provenance
         (`source` = static from the parsers, or llm from the grounded gap-filler). The
@@ -53,6 +58,7 @@ def register(mcp, ctx: ServiceContext) -> None:
         return ctx.relationships.list_interfaces(service_id)
 
     @mcp.tool()
+    @offloaded
     def get_service_relationships(service_id: str) -> dict:
         """Dependencies of ONE service: `downstream` (services it calls or publishes to) and
         `upstream` (services that call it). Use for a single service; for questions spanning

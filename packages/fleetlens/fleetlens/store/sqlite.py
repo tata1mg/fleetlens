@@ -10,6 +10,7 @@ import json
 import math
 import sqlite3
 import struct
+import threading
 from typing import Optional
 
 try:                                  # optional: only the semantic tier benefits
@@ -120,18 +121,44 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         self._path = None if path == ":memory:" else path
         self._sig = None
         self._vec_cache: dict = {}
+        self._info: Optional[dict] = None
+        self._local = threading.local()
+        self._generation = 0
+        self._write_conn = None
         if read_only:
             import os
-            self._conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
             st = os.stat(path)
             self._sig = (st.st_ino, st.st_size, st.st_mtime_ns)
             self.read_only = True
+            self._conn.execute("SELECT 1 FROM knowledge_objects LIMIT 1").fetchone()
             return
-        self._conn = sqlite3.connect(path)
         self.read_only = False
-        self._conn.execute("PRAGMA foreign_keys = ON;")
-        self._conn.executescript(_SCHEMA)
-        self._conn.commit()
+        self._write_conn = sqlite3.connect(path)
+        self._write_conn.execute("PRAGMA foreign_keys = ON;")
+        self._write_conn.executescript(_SCHEMA)
+        self._write_conn.commit()
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """The connection for this thread.
+
+        A sqlite3 connection belongs to the thread that made it, so a server answering
+        requests on a worker pool needs one per thread. They are only handed out for a
+        read-only store, where SQLite allows any number of concurrent readers and there is
+        no write to order; a writable store keeps its single connection, because a
+        transaction spanning threads is not something this store promises.
+
+        `_generation` is bumped when the index file is swapped, which retires every
+        thread's connection without having to reach into other threads.
+        """
+        if not self.read_only:
+            return self._write_conn
+        local = self._local
+        if getattr(local, "generation", None) != self._generation:
+            local.conn = sqlite3.connect(f"file:{self._path}?mode=ro", uri=True,
+                                         check_same_thread=False)
+            local.generation = self._generation
+        return local.conn
 
     def reload_if_changed(self) -> bool:
         """Reopen the connection if the file on disk is no longer the one we opened.
@@ -156,14 +183,15 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         if sig == self._sig:
             return False
         try:
-            conn = sqlite3.connect(f"file:{self._path}?mode=ro", uri=True)
-            conn.execute("SELECT 1 FROM knowledge_objects LIMIT 1").fetchone()
+            probe = sqlite3.connect(f"file:{self._path}?mode=ro", uri=True)
+            probe.execute("SELECT 1 FROM knowledge_objects LIMIT 1").fetchone()
+            probe.close()
         except sqlite3.Error:
             return False
-        old = self._conn
-        self._conn, self._sig = conn, sig
+        self._sig = sig
+        self._generation += 1         # every thread reopens on its next read
+        self._info = None             # counts belong to the file that is gone
         self._vec_cache.clear()       # a swapped-in index has different vectors
-        old.close()
         return True
 
     def index_info(self) -> dict:
@@ -173,18 +201,26 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         the age of the index is part of every answer's trustworthiness. Cheap enough to
         expose on an unauthenticated health check.
         """
+        if self._info is not None:
+            return dict(self._info)
         cur = self._conn.execute(
             "SELECT object_type, COUNT(*) FROM knowledge_objects GROUP BY object_type")
         counts = {t: n for t, n in cur.fetchall()}
         built = self._conn.execute(
             "SELECT MAX(updated_at) FROM knowledge_objects").fetchone()[0]
         edges = self._conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
-        return {"indexed_at": built, "services": counts.get("service", 0),
+        info = {"indexed_at": built, "services": counts.get("service", 0),
                 "interfaces": counts.get("interface", 0),
                 # "code_symbol", the name the call-graph loader writes. Looking up
                 # "symbol" quietly reported 0 on an index holding half a million of them,
                 # on the one tool whose job is telling you whether to trust the rest.
                 "symbols": counts.get("code_symbol", 0), "relationships": edges}
+        # Three full scans over half a million rows, for the tool clients are told to call
+        # first to decide whether to trust the others. On a served index the answer cannot
+        # change until the file is swapped, and `reload_if_changed` clears this when it is.
+        if self.read_only:
+            self._info = info
+        return dict(info)
 
     def commit(self) -> None:
         self._conn.commit()
@@ -207,6 +243,21 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
              obj.generation_strategy, int(obj.semantic_indexed), obj.last_generated_at,
              json.dumps(obj.payload)),
         )
+
+    def service_summaries(self) -> list:
+        """(id, name, interface_count, symbol_count) for every service.
+
+        The counts live in each row's JSON payload. Reading them through `list_objects`
+        meant building an object and parsing a payload per service in Python; letting
+        SQLite pull the two fields it needs does the same work in C and returns four
+        columns instead of a document.
+        """
+        return self._conn.execute(
+            "SELECT id, name, "
+            "       COALESCE(json_extract(payload, '$.interface_count'), 0), "
+            "       COALESCE(json_extract(payload, '$.symbol_count'), 0) "
+            "FROM knowledge_objects WHERE object_type = 'service' ORDER BY id;"
+        ).fetchall()
 
     def delete_objects_by_id_prefix(self, prefix: str) -> int:
         # substr() comparison avoids LIKE/GLOB wildcard semantics (ids contain '_', ':').
