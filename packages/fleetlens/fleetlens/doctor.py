@@ -163,8 +163,8 @@ def check_repo(rep: Report, repo: Path) -> None:
         else:
             rep.add("tsconfig", WARN, "missing; scip-typescript will infer one")
 
-    if (repo / ".contextignore").exists():
-        rep.add("contextignore", OK, "repo has its own .contextignore")
+    if (repo / ".fleetlensignore").exists():
+        rep.add("fleetlensignore", OK, "repo has its own .fleetlensignore")
 
     sensitive = [p.name for p in repo.glob(".env*")][:3]
     if sensitive:

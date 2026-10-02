@@ -172,7 +172,10 @@ def _repo_row(s: dict, i: int = 0, n: int = 0) -> str:
     # A repo indexed without a call graph still carries interfaces and edges, so it is a
     # success, but silently reporting "0 symbols" would read as a parser failure.
     mark = "ok  " if s.get("call_graph") != "unavailable" else "part"
-    if mark == "part":
+    if s.get("library"):
+        # Marked apart so a sweep does not read as a service with no endpoints.
+        mark, tail = "lib ", "  code only, not a mesh service"
+    elif mark == "part":
         tail += "  (no call graph)"
     return (f"{_tag(i, n)}{mark}  {s['slug']:30} {s['nodes']:4} symbols  "
             f"{s['edges']:4} calls  {s['interfaces']:3} interfaces{tail}")
@@ -263,6 +266,11 @@ def _cmd_index(args) -> int:
     finally:
         store.close()
     for s in results:
+        if s.get("library"):
+            print(f"fl index: {s['slug']} -> {args.db}  "
+                  f"({s['nodes']} symbols, {s['edges']} calls; library, so no service "
+                  f"node and no interfaces)")
+            continue
         print(f"fl index: {s['slug']} -> {args.db}  "
               f"({s['nodes']} symbols, {s['edges']} calls, "
               f"{s['interfaces']} interfaces, {s['handled_by']} handled_by"

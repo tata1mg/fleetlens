@@ -20,6 +20,8 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+
+from ..adapters._walk import iter_files
 from typing import Iterable, Optional
 
 # ext -> Tree-sitter language name (as understood by tree_sitter_language_pack).
@@ -57,12 +59,6 @@ _DEF_NODES = {
 }
 
 # Directories never worth parsing.
-_SKIP_DIRS = {
-    ".git", ".hg", ".svn", "node_modules", ".venv", "venv", "env", "__pycache__",
-    "dist", "build", ".mypy_cache", ".pytest_cache", ".tox", "vendor", "target",
-    ".context", ".claude", ".dual-graph",
-}
-
 _MAX_BYTES = 2_000_000  # skip pathologically large / generated files
 
 
@@ -196,13 +192,14 @@ def build_index(repo: Path) -> dict:
 
 
 def _walk(repo: Path) -> Iterable[Path]:
-    for p in sorted(repo.rglob("*")):
-        if not p.is_file():
-            continue
-        if any(part in _SKIP_DIRS for part in p.relative_to(repo).parts):
-            continue
-        if p.suffix.lower() in _LANG_BY_EXT:
-            yield p
+    """Source files to extract symbols from, using the walk every adapter shares.
+
+    This used to keep its own skip list and its own `rglob`, which meant a directory a repo
+    excluded was honoured for interfaces and ignored for symbols: excluding `examples/` from
+    a library dropped four endpoints and left five symbols behind. One walk, one set of
+    rules, and the exclusion means the same thing everywhere.
+    """
+    yield from iter_files(repo, tuple(_LANG_BY_EXT))
 
 
 def diff_index(old: dict, new: dict) -> dict:

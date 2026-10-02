@@ -283,6 +283,36 @@ libraries:                  # code-only paths, never mesh services
   - path: packages/shared
 ```
 
+A utilities repo that is entirely a library declares only the `libraries` key:
+
+```yaml
+# fleetlens.yaml
+libraries:
+  - path: "."
+```
+
+Its code is indexed and `find_symbol` reaches it, but it contributes no service and no
+interfaces. That matters because a shared package is not something another service calls
+over the network: listing one as a service invents a node nobody deploys, hands it whatever
+routes its examples and its own health blueprint happen to declare, and makes "which
+services are unused" unreadable.
+
+### Excluding directories
+
+A repo controls what fleetlens reads with a `.fleetlensignore` at its root, one
+gitignore-style pattern per line:
+
+```
+examples/
+fixtures/
+generated/
+```
+
+This applies everywhere: interfaces, outbound calls, config hosts, symbols and the call
+graph. Keys, certificates and credential files are never read whatever the file says, and a
+repo can exclude more but cannot opt back in; `SECURITY.md` lists the patterns that always
+apply.
+
 ---
 
 ## How it compares
@@ -327,7 +357,7 @@ count on every run, and `.context/skipped.json` lists each one.
 
 The default path is local-only: the deterministic core runs entirely on your machine, so
 nothing can exfiltrate because nothing leaves. Config is read for structure, never for secret
-values, and `.contextignore` is fail-closed. LLM tiers are the only path that can send code
+values, and `.fleetlensignore` is fail-closed. LLM tiers are the only path that can send code
 anywhere, they are off by default, and local Ollama keeps even those on-machine. More in
 [SECURITY.md](SECURITY.md).
 

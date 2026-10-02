@@ -75,3 +75,32 @@ def test_monorepo_subpath_scoping(tmp_path):
     iface_ids = {o.id for o in store.list_objects("interface")}
     # each service's interface is scoped to ITS OWN sub-path (no bleed across services)
     assert iface_ids == {"interface:orders:get-orders", "interface:billing:get-invoices"}
+
+
+def test_a_library_repo_is_indexed_for_code_but_is_not_a_service(tmp_path):
+    """A shared package is not something another service calls over the network. Indexing
+    one as a service invents a node nobody deploys, gives it whatever routes its examples
+    and its own health blueprint declare, and corrupts any reading of which services are
+    unused. Its code is still worth having: `find_symbol` should reach it.
+    """
+    from fleetlens.manifest import resolve_services
+
+    (tmp_path / "fleetlens.yaml").write_text('libraries:\n  - path: "."\n')
+    specs = resolve_services(tmp_path)
+
+    assert len(specs) == 1
+    assert specs[0].library is True
+    assert specs[0].path == "."
+
+
+def test_a_monorepo_can_mix_services_and_libraries(tmp_path):
+    from fleetlens.manifest import resolve_services
+
+    (tmp_path / "fleetlens.yaml").write_text(
+        "services:\n  - name: orders\n    path: services/orders\n"
+        "libraries:\n  - path: packages/shared\n")
+    specs = {s.name: s for s in resolve_services(tmp_path)}
+
+    assert specs["orders"].library is False
+    shared = next(s for s in specs.values() if s.library)
+    assert shared.path == "packages/shared"

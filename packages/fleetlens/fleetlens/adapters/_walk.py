@@ -27,12 +27,12 @@ COMMON_SKIP = frozenset({
     "node_modules", "bower_components", "vendor", ".bundle",
     "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox",
     "dist", "build", ".next", ".nuxt", "target", "coverage",
-    ".context", ".idea", ".vscode", ".claude",
+    ".context", ".idea", ".vscode", ".claude", ".dual-graph",
 })
 
 
 #: Files never read, whatever a repo says. A deny list is the wrong shape for secrets: the
-#: cost of missing one is unbounded, so these hold even if a `.contextignore` omits them.
+#: cost of missing one is unbounded, so these hold even if a `.fleetlensignore` omits them.
 #: SECURITY.md promises exactly this, which until now it did not do.
 ALWAYS_EXCLUDE = (
     ".env", ".env.*", "*.env",
@@ -44,15 +44,15 @@ ALWAYS_EXCLUDE = (
 )
 
 
-def load_contextignore(repo: Path) -> tuple:
-    """Patterns from a repo's `.contextignore`, plus the ones that always apply.
+def load_ignore_file(repo: Path) -> tuple:
+    """Patterns from a repo's `.fleetlensignore`, plus the ones that always apply.
 
     One pattern per line, `#` comments, gitignore-style globs matched against the path
     relative to the repo root and against the bare filename. A repo can add to the excluded
     set; it cannot remove anything from ALWAYS_EXCLUDE.
     """
     extra: list = []
-    f = Path(repo) / ".contextignore"
+    f = Path(repo) / ".fleetlensignore"
     if f.is_file():
         try:
             for raw in f.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -77,7 +77,7 @@ def iter_files(repo: Path, suffixes: tuple, *, skip: frozenset = COMMON_SKIP,
     which matters because interface ids are derived from discovery order.
     """
     repo = Path(repo)
-    patterns = load_contextignore(repo) if patterns is None else patterns
+    patterns = load_ignore_file(repo) if patterns is None else patterns
     stack = [repo]
     while stack:
         current = stack.pop()

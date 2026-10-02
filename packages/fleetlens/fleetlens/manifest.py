@@ -12,6 +12,11 @@ services in that repo and their source roots:
     libraries:                    # code-only paths; never become mesh services
       - path: packages/shared
 
+A repo that is entirely a library declares only `libraries: [{path: "."}]`. Its code is
+indexed and its symbols are searchable, but it contributes no service and no interfaces: a
+shared package is not something another service calls over the network, and listing it as
+one corrupts both the service graph and any "which services are unused" reading of it.
+
 No manifest => the zero-config default: the repo is ONE service, slug = folder name.
 Deployment topology (which code runs as which deployed service) can't be inferred from
 source, so it is declared here rather than guessed.
@@ -32,6 +37,7 @@ class ServiceSpec:
     path: str = "."          # source root, relative to the repo
     language: str = "auto"   # "auto" | "python" | "typescript"
     hosts: dict = field(default_factory=dict)   # declared host -> service name
+    library: bool = False    # code only: symbols are indexed, but it is not a mesh service
 
 
 @dataclass
@@ -88,12 +94,23 @@ def load_manifest(repo: Path) -> Optional[Manifest]:
 
 
 def resolve_services(repo: Path, default_name: Optional[str] = None) -> list[ServiceSpec]:
-    """The services to index for a repo: from its manifest, else the 1:1 default."""
+    """What to index for a repo: from its manifest, else the 1:1 default.
+
+    A library entry yields a spec like any other, marked `library`. Indexing reads its code
+    and stores its symbols, but it contributes no service to the mesh and no interfaces,
+    because a shared package is not something anything calls over the network. A repo that
+    is entirely a library declares `libraries: [{path: "."}]` and no services.
+    """
     repo = Path(repo)
     manifest = load_manifest(repo)
-    if manifest and manifest.services:
-        for spec in manifest.services:
-            spec.hosts = {**manifest.hosts, **(spec.hosts or {})}
-        return manifest.services
     hosts = dict(manifest.hosts) if manifest else {}
+    if manifest and (manifest.services or manifest.library_paths):
+        specs = []
+        for spec in manifest.services:
+            spec.hosts = {**hosts, **(spec.hosts or {})}
+            specs.append(spec)
+        for path in manifest.library_paths:
+            name = repo.name if path in (".", "") else f"{repo.name}/{path.strip('/')}"
+            specs.append(ServiceSpec(name=name, path=path or ".", library=True))
+        return specs
     return [ServiceSpec(name=default_name or repo.name, path=".", language="auto", hosts=hosts)]

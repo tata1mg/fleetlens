@@ -6,7 +6,7 @@ survives into the store.
 """
 from __future__ import annotations
 
-from fleetlens.adapters._walk import ALWAYS_EXCLUDE, iter_files, load_contextignore
+from fleetlens.adapters._walk import ALWAYS_EXCLUDE, iter_files, load_ignore_file
 from fleetlens.adapters.hosts import _config_files, config_hosts, redact
 
 
@@ -52,8 +52,8 @@ def test_a_repo_can_exclude_more_but_not_less(tmp_path):
     (tmp_path / "server.pem").write_text("PRIVATE\n")
 
     # a repo that tries to opt back into reading key material
-    (tmp_path / ".contextignore").write_text("# ours\ngenerated/\n")
-    patterns = load_contextignore(tmp_path)
+    (tmp_path / ".fleetlensignore").write_text("# ours\ngenerated/\n")
+    patterns = load_ignore_file(tmp_path)
 
     assert "generated" in patterns                       # the repo's own addition applies
     for always in ALWAYS_EXCLUDE:
@@ -70,7 +70,7 @@ def test_dotenv_is_read_by_default_and_can_be_opted_out(tmp_path):
     assert [p.name for p in _config_files(tmp_path, 3)] == [".env"]
     assert [b.key for b in config_hosts(tmp_path)] == ["ORDERS_SERVICE_HOST"]
 
-    (tmp_path / ".contextignore").write_text(".env\n")
+    (tmp_path / ".fleetlensignore").write_text(".env\n")
     assert _config_files(tmp_path, 3) == []
     assert config_hosts(tmp_path) == []
 
@@ -109,3 +109,26 @@ def test_a_file_that_will_not_compile_is_skipped_not_fatal(tmp_path):
     nul = tmp_path / "binary.py"
     nul.write_bytes(b"x = 1\x00\n")
     assert read_and_parse(nul)[1] is None
+
+
+def test_an_excluded_directory_is_excluded_from_symbols_too(tmp_path):
+    """The exclusion used to mean two different things. Interface discovery honoured it and
+    symbol extraction kept its own skip list and its own walk, so excluding `examples/` from
+    a library dropped four endpoints and left five symbols and their call edges behind.
+    What a repo excludes has to be excluded everywhere, or the promise is not one.
+    """
+    from fleetlens.symbols.indexer import build_index
+
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "core.py").write_text("def kept():\n    return 1\n")
+    (tmp_path / "examples").mkdir()
+    (tmp_path / "examples" / "demo.py").write_text("def dropped():\n    return 2\n")
+
+    before = build_index(tmp_path)["symbols"]
+    assert any("dropped" in k for k in before)
+
+    (tmp_path / ".fleetlensignore").write_text("examples/\n")
+    after = build_index(tmp_path)["symbols"]
+
+    assert any("kept" in k for k in after)
+    assert not any("dropped" in k for k in after)

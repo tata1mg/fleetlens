@@ -30,7 +30,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
-from ._walk import ALWAYS_EXCLUDE, _excluded, load_contextignore
+from ._walk import ALWAYS_EXCLUDE, _excluded, load_ignore_file
 
 _SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
          "vendor", ".context", "tests", "test"}
@@ -301,7 +301,7 @@ def _config_files(repo: Path, max_parts: int) -> list[Path]:
     # A repo can exclude a config file from being read at all. Config is the one place
     # fleetlens deliberately reads files that may hold secrets, so the escape hatch belongs
     # here more than anywhere else.
-    patterns = load_contextignore(repo)
+    patterns = load_ignore_file(repo)
 
     def walk(d: Path, depth: int) -> None:
         try:
@@ -317,7 +317,7 @@ def _config_files(repo: Path, max_parts: int) -> list[Path]:
             elif any(fnmatch(p.name, g) for g in _CONFIG_GLOBS):
                 # ALWAYS_EXCLUDE is not applied to config: reading `.env` for `ORDERS_HOST`
                 # is the point, and values are redacted on the way into HostBinding. A repo
-                # that disagrees says so in .contextignore.
+                # that disagrees says so in .fleetlensignore.
                 if not _excluded(rel, p.name, tuple(patterns[len(ALWAYS_EXCLUDE):])):
                     out.append(p)
 

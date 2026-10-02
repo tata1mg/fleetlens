@@ -37,7 +37,7 @@ id_rsa  id_dsa  id_ecdsa  id_ed25519
 .npmrc  .pypirc  .netrc  .htpasswd
 ```
 
-A repo can exclude more by listing patterns in `.contextignore`, one per line, gitignore
+A repo can exclude more by listing patterns in `.fleetlensignore`, one per line, gitignore
 style. That includes `.env` itself if you would rather fleetlens did not read it, at the cost
 of the service addresses declared there. A repo can add to this set; it cannot remove
 anything from the list above.

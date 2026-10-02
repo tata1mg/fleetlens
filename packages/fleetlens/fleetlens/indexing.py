@@ -103,7 +103,8 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
                 cg_cli.main, [str(root), "--slug", slug, "--language", language, "--quiet"])
 
             with tick("interfaces (adapters)"):
-                iface_registry.build_interfaces(root, slug)
+                if not spec.library:
+                    iface_registry.build_interfaces(root, slug)
 
             # A service node carrying its outbound HTTP calls — the consumer side the fleet
             # resolver later joins against every service's interfaces.
@@ -129,7 +130,8 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
 
     # Sites the adapters saw but could not resolve — the only input the LLM gap-filler
     # (`fl enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
-    skipped = json.loads((root / ".context" / "skipped.json").read_text()).get("sites", []) \
+    sk_file = root / ".context" / "skipped.json"
+    skipped = (json.loads(sk_file.read_text()).get("sites", []) if sk_file.exists() else []) \
         + [asdict(sk) for sk in skipped_out]
     return {"slug": slug, "root": root, "spec": spec, "outbound": outbound,
             "host_bindings": host_bindings, "identity": identity, "skipped": skipped,
@@ -143,9 +145,20 @@ def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats
     # Interfaces load before the call graph so their nodes exist when the call-graph loader
     # attaches handled_by edges (interface -> handler = the endpoint trace).
     with tick("interfaces (load to store)"):
-        iface_summary = iface_loader.load(root / ".context", slug, store)
+        iface_summary = ({"interfaces": 0} if spec.library
+                         else iface_loader.load(root / ".context", slug, store))
     with tick("call graph (load to store)"):
         summary = cg_loader.load(root / ".context", slug, store, store)
+
+    if spec.library:
+        # Its code is in the index and `find_symbol` reaches it, but it is not a node in the
+        # mesh: nothing calls a shared package over the network, and listing it as a service
+        # would inflate the service count and make it read as an endpoint-less service.
+        store.commit()
+        summary.update(slug=slug, library=True, interfaces=0, outbound=0,
+                       host_bindings=0, skipped=0,
+                       call_graph="ok" if x["call_graph_ok"] else "unavailable")
+        return summary
 
     store.upsert_object(KnowledgeObject(
         object_type="service", object_id=slug, name=slug, summary=None, version="unknown",
