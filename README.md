@@ -15,9 +15,32 @@ confident guess about a service boundary reads exactly like a fact.
 
 fleetlens builds the missing layer. Point it at a folder of service repositories and it derives
 the cross-repo service graph: who calls whom over HTTP, who publishes and consumes which
-queues, and which endpoint maps to which handler. It works from source, with no LLM, no API key
-and no running services, then serves the graph to your agent over
+queues, and which endpoint maps to which handler. Then it serves that graph to your agent over
 [MCP](https://modelcontextprotocol.io).
+
+### Deterministic first
+
+This is the part that matters, and it is what separates fleetlens from a tool that asks a
+model to read your code.
+
+**Parsers, not predictions.** The graph is derived by parsing source: ASTs, routing DSLs and
+SCIP call graphs. The same commit always produces the same graph. There is no temperature, no
+sampling, and no answer that changes because a model was asked twice. Every fact carries the
+file and line it came from and a confidence label, so you can check it.
+
+**Gaps are reported, not filled in.** When a parser cannot resolve a path, it records the site
+rather than guessing. A route fleetlens could not read shows up as a number you can act on. A
+confident guess about a service boundary is indistinguishable from a fact, which is exactly
+the failure this exists to prevent.
+
+**The LLM tier is optional, and it is a tier.** It only ever sees sites the parsers already
+recorded as unresolved, it never overrides a deterministic answer, and it must ground what it
+proposes in a literal that exists in the repository. Turn it off and you still have the graph.
+
+**Nothing leaves your network.** No API key, no SaaS, no running services, no telemetry. The
+deterministic core is local by construction. The optional tiers run against
+[Ollama](https://ollama.com) on your own hardware, so even enrichment stays inside the
+perimeter. On a private codebase that is usually the difference between shipping this and not.
 
 ---
 
