@@ -52,6 +52,10 @@ Roughly in order of how often we expect it to matter:
 4. **Index metadata**: schema version, the git SHA of each indexed repository, and a
    server that refuses an index newer than it understands.
 5. **Pruning on re-index**, so a removed service leaves no orphans behind.
+6. **A full-text index over symbol ids.** `find_symbol` answers in about 6 ms when a term
+   matches, and takes a full scan when nothing does, because `LIKE '%x%'` cannot use a
+   B-tree. On a third of a million symbols that is 273 ms, and it is the only scan left in
+   the serving path.
 
 Framework adapters are the easiest contribution and do not touch the core. See
 [CONTRIBUTING.md](CONTRIBUTING.md).

@@ -395,6 +395,53 @@ a parser are especially welcome.
 [BENCHMARK.md](BENCHMARK.md) reports a controlled study of what changes when an agent gets
 fleetlens, including the questions where it did not help and the measured noise floor.
 
+### Server performance
+
+A real fleet, served from one small VM. Index under test: **205 services, 15,461
+interfaces, 356,164 symbols, 288,596 relationships** — a 664 MB SQLite file. Host: AWS
+`m7g.xlarge`, Graviton3 ARM64, **4 vCPU**, 16 GiB, no swap, default configuration.
+
+p50 / p95 in milliseconds, by concurrent MCP sessions:
+
+| tool | c=1 | c=8 | c=16 | peak rps |
+|---|---|---|---|---|
+| `get_index_info` | 5.3 / 6.0 | 30.4 / 85.0 | 63.2 / 202.2 | 155 |
+| `get_endpoint_call_graph` | 6.1 / 7.3 | 37.2 / 85.0 | 78.6 / 202.8 | 128 |
+| `get_callers` | 5.6 / 6.0 | 36.8 / 135.7 | 68.0 / 212.6 | 151 |
+| `get_callees` | 5.7 / 7.0 | 37.6 / 128.0 | 75.8 / 219.6 | 145 |
+| `get_symbol` | 5.8 / 6.7 | 33.8 / 107.8 | 74.9 / 205.0 | 140 |
+| `find_symbol` | 5.8 / 47.2 | 41.6 / 121.5 | 72.7 / 196.1 | 90 |
+| `list_interfaces` | 5.6 / 12.6 | 37.1 / 104.5 | 111.7 / 276.4 | 132 |
+| `get_service_relationships` | 8.5 / 24.9 | 72.9 / 111.1 | 171.8 / 309.1 | 88 |
+| `list_services` | 18.1 / 18.7 | 57.5 / 110.9 | 140.6 / 265.5 | 75 |
+| `get_service_graph` | 76.4 / 105.3 | 582.2 / 661.6 | 1196.0 / 1291.4 | 12 |
+| `find_symbol`, no match | 272.7 / 277.8 | 1657.0 / 1918.9 | 3290.9 / 3538.0 | 4 |
+
+Most of the call-graph surface answers in **under 10 ms** on an index of a third of a
+million symbols, because every lookup is served by an index rather than a scan. Two rows
+are honest exceptions:
+
+* `get_service_graph` returns the entire mesh in one response. It is slow because it is
+  large, and it exists so that a fleet-wide question costs one call instead of the 18 to 26
+  round trips the same question took before it was added.
+* `find_symbol` on a term that matches **nothing** is the one remaining full scan:
+  `LIKE '%x%'` cannot use a B-tree. A term that matches is 6 ms. This is the next thing to
+  fix, and it is listed in [ROADMAP.md](ROADMAP.md).
+
+Reproduce with [`bench/mcp_perf.py`](bench/mcp_perf.py), which samples its arguments from
+whatever index it is pointed at:
+
+```bash
+python bench/mcp_perf.py --url http://host:8081/mcp --token "$FLEETLENS_TOKEN" \
+    --concurrency 1,8,16 --requests 60
+```
+
+Three caveats. The harness ran on the same 4 vCPU host as the server, so its own sessions
+compete for those cores and the figures are if anything pessimistic. This deployment serves
+the deterministic index only, with no embedding model loaded, so the two semantic tools are
+not measured. And the thread pool that runs tool bodies defaults to 2, because the work is
+Python holding the GIL rather than I/O: more threads measured slower, not faster.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md).
