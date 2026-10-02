@@ -172,6 +172,43 @@ def check_repo(rep: Report, repo: Path) -> None:
                 f"{', '.join(sensitive)} present and excluded by the default ignore rules")
 
 
+def check_interfaces(rep: Report, repo: Path) -> None:
+    """How much of this repo's routing the adapters actually understood.
+
+    Framework coverage is never finished: frameworks add registration styles and new
+    frameworks appear. The thing that must not happen is a route going missing silently,
+    so this reports what was recognised against what was merely suspected, per file. A
+    file with path-shaped literals and no interfaces is where to look first.
+    """
+    from .adapters.base import SkippedSite  # noqa: F401  (documents the shape below)
+    from .adapters.registry import discover_interfaces
+
+    skipped: list = []
+    try:
+        found = discover_interfaces(repo, skipped)
+    except Exception as exc:  # noqa: BLE001 - an audit must not fail the doctor
+        rep.add("interfaces", WARN, f"could not scan: {exc}")
+        return
+
+    unknown = [s for s in skipped if s.reason == "unrecognised-route-registration"]
+    unresolved = [s for s in skipped if s.reason != "unrecognised-route-registration"]
+    detail = f"{len(found)} found, {len(unresolved)} unresolved, {len(unknown)} unrecognised"
+
+    if unknown:
+        where = sorted({s.file for s in unknown})[:3]
+        rep.add("interfaces", WARN, detail,
+                "route registrations no adapter recognised, in "
+                + ", ".join(where) + (" and others" if len(set(s.file for s in unknown)) > 3 else "")
+                + ". Run `fl index <repo> --fill-gaps` to resolve them, or open an issue "
+                  "with the pattern so an adapter can cover it.")
+    elif not found:
+        rep.add("interfaces", WARN, detail,
+                "no HTTP interfaces found. Normal for a worker or library; "
+                "unexpected for a service.")
+    else:
+        rep.add("interfaces", OK, detail)
+
+
 def run(repo: Optional[Path] = None, base_url: str = "http://localhost:11434") -> Report:
     rep = Report()
     check_core(rep)
@@ -179,6 +216,7 @@ def run(repo: Optional[Path] = None, base_url: str = "http://localhost:11434") -
     check_ollama(rep, base_url)
     if repo is not None:
         check_repo(rep, repo)
+        check_interfaces(rep, Path(repo))
     return rep
 
 

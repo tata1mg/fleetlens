@@ -64,6 +64,18 @@ elif skipped is not None:
                                snippet=..., names=identifiers_in(arg)))
 ```
 
+**Report what you do not recognise.** Framework coverage is never finished, so the Python
+adapter also records any call carrying a URL-shaped literal that no pattern claimed, as an
+`unrecognised-route-registration` skipped site. If you teach it a new registration style,
+that site stops being reported because the route is now found. Check with:
+
+```bash
+fl doctor /path/to/repo      # ... interfaces   42 found, 3 unresolved, 2 unrecognised
+```
+
+A repo reporting `unrecognised` is the best possible bug report for an adapter: the pattern
+is real, in real code, and already isolated.
+
 **Stay generic.** Adapters describe *frameworks and libraries*, not individual codebases. If
 a rule would only ever fire on one company's repo, it belongs in the LLM gap-filler or a
 `fleetlens.yaml` declaration, not in an adapter. This keeps the core honest and portable.
