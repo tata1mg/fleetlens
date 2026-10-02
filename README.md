@@ -20,82 +20,29 @@ queues, and which endpoint maps to which handler. Then it serves that graph to y
 
 ### Deterministic first
 
-This is the part that matters, and it is what separates fleetlens from a tool that asks a
-model to read your code.
+This is what separates fleetlens from a tool that asks a model to read your code.
 
-**Parsers, not predictions.** The graph is derived by parsing source: ASTs, routing DSLs and
-SCIP call graphs. The same commit always produces the same graph. There is no temperature, no
-sampling, and no answer that changes because a model was asked twice. Every fact carries the
-file and line it came from and a confidence label, so you can check it.
+The graph is built by parsing source. Python and TypeScript syntax trees, Rails routing
+files, and SCIP call graphs. The same commit always produces the same graph. Nothing is
+sampled, so no answer changes because a model was asked the same question twice. Every fact
+records the file and line it came from, along with how confident the parser was, so you can
+go and check it yourself.
 
-**Gaps are reported, not filled in.** When a parser cannot resolve a path, it records the site
-rather than guessing. A route fleetlens could not read shows up as a number you can act on. A
-confident guess about a service boundary is indistinguishable from a fact, which is exactly
-the failure this exists to prevent.
+When a parser cannot work out a path, it writes down where it got stuck instead of guessing.
+A route fleetlens could not read becomes a number in the output that you can act on. This
+matters because a confident guess about a service boundary reads exactly like a fact, and
+that is the failure the whole project exists to avoid.
 
-**The LLM tier is optional, and it is a tier.** It only ever sees sites the parsers already
-recorded as unresolved, it never overrides a deterministic answer, and it must ground what it
-proposes in a literal that exists in the repository. Turn it off and you still have the graph.
+The LLM layer is optional and it sits on top. It only ever looks at the places the parsers
+already flagged, it cannot overrule anything they worked out, and whatever it suggests has to
+match a literal string that really exists in the repository. Switch it off and you still have
+the graph.
 
-**Nothing leaves your network.** No API key, no SaaS, no running services, no telemetry. The
-deterministic core is local by construction. The optional tiers run against
-[Ollama](https://ollama.com) on your own hardware, so even enrichment stays inside the
-perimeter. On a private codebase that is usually the difference between shipping this and not.
-
----
-
-## What it produces
-
-Pointed at the four public [notifyone](https://github.com/orgs/tata1mg/repositories?q=notifyone)
-repositories, a real notification system written in Python and TypeScript, with no
-configuration:
-
-```
-$ fl index-all ./notifyone --db fleet.db
-  ok    notifyone-core             623 symbols   567 calls   42 interfaces  10 unresolved
-  ok    notifyone-dashboard        334 symbols   256 calls    0 interfaces  48 unresolved
-  ok    notifyone-gateway          116 symbols    71 calls    3 interfaces   5 unresolved
-  ok    notifyone-handler          262 symbols   188 calls    6 interfaces  10 unresolved
-fl index-all: 4/4 indexed into fleet.db (0 skipped) | 4 cross-repo edges (3 async)
-```
-
-That's the whole setup. The resulting graph:
-
-```
-notifyone-gateway    --calls-------> notifyone-core      [high]
-                       /events/custom
-                       /notifications/{notification_request_id}
-notifyone-gateway    --publishes_to-> notifyone-core     [config]
-                       stag-ns_high_priority_event_notification
-                       stag-ns_medium_priority_event_notification
-                       stag-ns_low_priority_event_notification
-notifyone-core       --publishes_to-> notifyone-handler  [config]
-                       stag-ns_email_event_notification
-                       stag-ns_sms_event_notification
-                       stag-ns_push_event_notification
-                       stag-ns_whatsapp_event_notification
-notifyone-handler    --publishes_to-> notifyone-core     [config]
-                       stag-ns_notification_status_update
-```
-
-<p align="center">
-  <img src="docs/mesh.svg" alt="Cross-repo service mesh: solid edges are HTTP calls, dashed are queue/topic dependencies" width="620">
-</p>
-
-<p align="center"><em><code>fl export-graph</code> renders the same graph as a self-contained HTML file, with no server.</em></p>
-
-No catalog was written by hand, and nothing ran in production. Every edge carries its evidence
-and a confidence label.
-
-In a controlled study on a 16 service codebase, giving an agent this graph reduced fabricated
-dependencies from 45 to 6 and roughly halved both tokens and turns. The questions where it did
-not help are reported too. See [BENCHMARK.md](BENCHMARK.md).
-
-The `unresolved` column is worth reading. `notifyone-dashboard` is TypeScript and contributed
-0 interfaces and 48 unresolved sites. fleetlens is weak on TypeScript and reports that, rather
-than returning an empty graph that looks confident. Each site is listed in
-`.context/skipped.json` with its file, line and the expression the parser could not read. The
-optional LLM tier works from that list, and never guesses outside it.
+None of this leaves your network. There is no API key, no hosted service, nothing to run in
+production, and no telemetry. The parsers run on your machine because that is the only place
+they can run. The optional layers talk to [Ollama](https://ollama.com) on your own hardware,
+so even those stay inside the building. On a private codebase that is often the difference
+between being able to use something and not.
 
 ---
 
@@ -392,18 +339,25 @@ a parser are especially welcome.
 
 ## Benchmark
 
-[BENCHMARK.md](BENCHMARK.md) reports a controlled study of what changes when an agent gets
-fleetlens, including the questions where it did not help and the measured noise floor.
+Two measurements. The first asks whether fleetlens makes a coding agent better at questions
+that span several repositories. The second asks how fast the server answers when several
+agents are using it at once.
+
+### Does it help an agent?
+
+Placeholder, filled in when the current run finishes.
 
 ### Server performance
 
-A real fleet, served from one small VM. Index under test: **205 services, 15,461
-interfaces, 356,164 symbols, 288,596 relationships** — a 664 MB SQLite file. Host: AWS
-`m7g.xlarge`, Graviton3 ARM64, **4 vCPU**, 16 GiB, no swap, default configuration.
+Measured on a real fleet served from one small VM. The index held 205 services, 15,461
+interfaces, 356,164 symbols and 288,596 relationships, in a SQLite file of 664 MB. The
+machine was an AWS m7g.xlarge: Graviton3, 4 virtual CPUs, 16 GB of memory, no swap, running
+fleetlens with its default settings.
 
-p50 / p95 in milliseconds, by concurrent MCP sessions:
+Each cell gives the median and the 95th percentile response time in milliseconds, for a
+given number of agents talking to the server at once.
 
-| tool | c=1 | c=8 | c=16 | peak rps |
+| tool | 1 agent | 8 agents | 16 agents | best requests/sec |
 |---|---|---|---|---|
 | `get_index_info` | 5.3 / 6.0 | 30.4 / 85.0 | 63.2 / 202.2 | 155 |
 | `get_endpoint_call_graph` | 6.1 / 7.3 | 37.2 / 85.0 | 78.6 / 202.8 | 128 |
@@ -415,18 +369,17 @@ p50 / p95 in milliseconds, by concurrent MCP sessions:
 | `get_service_relationships` | 8.5 / 24.9 | 72.9 / 111.1 | 171.8 / 309.1 | 88 |
 | `list_services` | 18.1 / 18.7 | 57.5 / 110.9 | 140.6 / 265.5 | 75 |
 | `get_service_graph` | 76.4 / 105.3 | 582.2 / 661.6 | 1196.0 / 1291.4 | 12 |
-| `find_symbol`, no match | 272.7 / 277.8 | 1657.0 / 1918.9 | 3290.9 / 3538.0 | 4 |
+| `find_symbol`, nothing matches | 272.7 / 277.8 | 1657.0 / 1918.9 | 3290.9 / 3538.0 | 4 |
 
-Most of the call-graph surface answers in **under 10 ms** on an index of a third of a
-million symbols, because every lookup is served by an index rather than a scan. Two rows
-are honest exceptions:
+Most of the call graph answers in under ten milliseconds on an index of a third of a million
+symbols, because each lookup goes through a database index rather than reading every row.
 
-* `get_service_graph` returns the entire mesh in one response. It is slow because it is
-  large, and it exists so that a fleet-wide question costs one call instead of the 18 to 26
-  round trips the same question took before it was added.
-* `find_symbol` on a term that matches **nothing** is the one remaining full scan:
-  `LIKE '%x%'` cannot use a B-tree. A term that matches is 6 ms. This is the next thing to
-  fix, and it is listed in [ROADMAP.md](ROADMAP.md).
+Two rows are slower, and both for reasons worth stating. `get_service_graph` hands back the
+entire dependency graph in one response, so it is slow because the answer is large. It exists
+because asking the same question the other way round took between 18 and 26 separate calls.
+And `find_symbol` has to read every symbol when the search term matches nothing, because a
+substring search cannot use a database index. A term that does match comes back in about six
+milliseconds. Fixing that is the next thing on [ROADMAP.md](ROADMAP.md).
 
 Reproduce with [`bench/mcp_perf.py`](bench/mcp_perf.py), which samples its arguments from
 whatever index it is pointed at:
@@ -436,11 +389,13 @@ python bench/mcp_perf.py --url http://host:8081/mcp --token "$FLEETLENS_TOKEN" \
     --concurrency 1,8,16 --requests 60
 ```
 
-Three caveats. The harness ran on the same 4 vCPU host as the server, so its own sessions
-compete for those cores and the figures are if anything pessimistic. This deployment serves
-the deterministic index only, with no embedding model loaded, so the two semantic tools are
-not measured. And the thread pool that runs tool bodies defaults to 2, because the work is
-Python holding the GIL rather than I/O: more threads measured slower, not faster.
+Three things to know about these numbers. The measuring script ran on the same four-CPU
+machine as the server, so it was competing for the same processors, which makes the results
+slightly worse than the server alone would manage. This deployment serves the parsed index
+only, with no embedding model loaded, so the two search tools are not covered. And fleetlens
+runs at most two tool calls at a time by default, because most of the work is building the
+response in Python rather than waiting on the disk, and allowing more turned out to be
+slower rather than faster.
 
 ## Roadmap
 
