@@ -209,9 +209,9 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
     spent waiting on external indexer processes, so this is close to free; loading is
     milliseconds and the store is one SQLite connection, so it stays on this thread.
 
-    Results are loaded in repository order rather than completion order. Nothing should
-    depend on that, but "should" is doing a lot of work in a sentence about an index people
-    diff, so the sweep produces the same store whatever order the workers happen to finish.
+    Results are loaded, and reported, in completion order. Load order does not affect the
+    store, because interface ids are assigned during extraction and every row is keyed by
+    id; see the comment on the drain loop for why draining in repository order was worse.
     """
     base_dir = Path(base_dir).resolve()
     repos = sorted(d for d in base_dir.iterdir() if _looks_like_repo(d))

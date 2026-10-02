@@ -157,51 +157,78 @@ def _enrich_printer():
     return render
 
 
-def _progress_printer():
-    """Render indexing progress to stderr.
+def _tag(i: int, n: int) -> str:
+    """`[12/208] `, padded so the columns after it line up for the whole sweep."""
+    return f"[{i:>{len(str(n))}}/{n}] " if n else ""
 
-    Two audiences with opposite needs: a terminal wants a single line that rewrites itself,
-    a cron log wants durable lines and no control characters. So transient phase updates go
-    to a rewritten line on a tty and are dropped entirely otherwise, while completed repos
-    print a real line either way.
+
+def _repo_row(s: dict, i: int = 0, n: int = 0) -> str:
+    """One durable line for a repository that finished."""
+    g = s.get("gaps")
+    tail = (f"  {g['resolved']}/{s['skipped']} gaps filled" if g
+            else f"  {s.get('skipped', 0):2} unresolved")
+    # A repo indexed without a call graph still carries interfaces and edges, so it is a
+    # success, but silently reporting "0 symbols" would read as a parser failure.
+    mark = "ok  " if s.get("call_graph") != "unavailable" else "part"
+    if mark == "part":
+        tail += "  (no call graph)"
+    return (f"{_tag(i, n)}{mark}  {s['slug']:30} {s['nodes']:4} symbols  "
+            f"{s['edges']:4} calls  {s['interfaces']:3} interfaces{tail}")
+
+
+def _progress_printer():
+    """Render indexing progress.
+
+    Every repository that finishes prints its own line and keeps it, on a terminal and in a
+    log file alike. An earlier version accumulated the results and printed the table after
+    the sweep returned, which over a 200-repo fleet meant half an hour of one rewritten line
+    with nothing to scroll back through, and nothing at all if the run was killed.
+
+    Transient updates -- which repo is in flight, which phase it is in -- are a terminal
+    affordance: they rewrite a single line on a tty and are dropped otherwise, so a log
+    holds one line per repository and no control characters.
     """
     tty = sys.stderr.isatty()
     width = 0
+    at = {"i": 0, "n": 0}
 
-    def render(event: str, d: dict) -> None:
-        nonlocal width
-        if event == "repo":
-            line = f"[{d['i']}/{d['n']}] {d['slug']}"
-        elif event == "phase":
-            line = f"  {d['slug']}: {d['phase']}"
-        elif event == "gap":
-            line = f"  {d['slug']}: gap {d['i']}/{d['n']} ({d['resolved']} resolved)"
-        elif event in ("repo-done", "repo-failed"):
-            if tty and width:
-                print("\r" + " " * width + "\r", end="", file=sys.stderr)
-                width = 0
-            if event == "repo-failed":
-                print(f"  fail  {d['slug']:30} {d['error']}", file=sys.stderr)
-            return          # the success line is printed by the caller's summary table
-        else:
-            return
-
-        if not tty:
-            # Only the coarse per-repo heading is worth a line in a log file.
-            if event == "repo":
-                print(line, file=sys.stderr, flush=True)
-            return
-        pad = max(0, width - len(line))
-        print("\r" + line + " " * pad, end="", file=sys.stderr, flush=True)
-        width = len(line)
-
-    def done() -> None:
+    def wipe() -> None:
+        """Clear the transient line so a durable one can be printed over it."""
         nonlocal width
         if tty and width:
             print("\r" + " " * width + "\r", end="", file=sys.stderr, flush=True)
             width = 0
 
-    render.done = done
+    def render(event: str, d: dict) -> None:
+        nonlocal width
+        if event == "repo":
+            at.update(i=d["i"], n=d["n"])
+            line = f"{_tag(d['i'], d['n'])}{d['slug']}"
+        elif event == "phase":
+            line = f"  {d['slug']}: {d['phase']}"
+        elif event == "gap":
+            line = f"  {d['slug']}: gap {d['i']}/{d['n']} ({d['resolved']} resolved)"
+        elif event == "repo-done":
+            wipe()
+            # Results on stdout, as the end-of-run table was, so `fl index-all > repos.txt`
+            # still collects them and the progress chatter still goes to the terminal.
+            print(_repo_row(d, at["i"], at["n"]), flush=True)
+            return
+        elif event == "repo-failed":
+            wipe()
+            print(f"{_tag(at['i'], at['n'])}fail  {d['slug']:30} {d['error']}",
+                  file=sys.stderr, flush=True)
+            return
+        else:
+            return
+
+        if not tty:
+            return
+        pad = max(0, width - len(line))
+        print("\r" + line + " " * pad, end="", file=sys.stderr, flush=True)
+        width = len(line)
+
+    render.done = wipe
     return render
 
 
@@ -272,19 +299,7 @@ def _cmd_index_all(args) -> int:
         prog.done()
     finally:
         store.close()
-    for s in res["ok"]:
-        g = s.get("gaps")
-        tail = (f"  {g['resolved']}/{s['skipped']} gaps filled" if g
-                else f"  {s.get('skipped', 0):2} unresolved")
-        # A repo indexed without a call graph still carries interfaces and edges, so it is
-        # a success, but silently reporting "0 symbols" would read as a parser failure.
-        mark = "ok  " if s.get("call_graph") != "unavailable" else "part"
-        if mark == "part":
-            tail += "  (no call graph)"
-        print(f"  {mark}  {s['slug']:30} {s['nodes']:4} symbols  {s['edges']:4} calls  "
-              f"{s['interfaces']:3} interfaces{tail}")
-    for slug, err in res["failed"]:
-        print(f"  skip  {slug:30} {err}", file=sys.stderr)
+    # Each repo printed its own line as it finished, so there is no table to print here.
     # cross-repo resolve needs the whole fleet's interfaces, so run it once at the end
     store = SqliteStore(args.db)
     try:

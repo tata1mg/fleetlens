@@ -190,3 +190,27 @@ def test_a_slow_early_repo_does_not_hold_back_everyone_else(tmp_path, monkeypatc
     assert sorted(loaded) == ["svc00", "svc01", "svc02", "svc03"]
     # the printed report is still in repository order whatever order they finished in
     assert [s["slug"] for s in res["ok"]] == ["svc00", "svc01", "svc02", "svc03"]
+
+
+def test_each_repo_prints_a_line_as_it_finishes(capsys):
+    """A fleet sweep takes half an hour. Its output has to be readable while it runs, and
+    has to survive the run being killed, so a repository reports when it finishes rather
+    than being held back for a table printed at the end."""
+    from fleetlens.cli import _progress_printer
+
+    prog = _progress_printer()                 # capsys makes stderr a pipe, so: not a tty
+    prog("repo", {"i": 1, "n": 2, "slug": "orders"})
+    prog("phase", {"slug": "orders", "phase": "call graph"})
+    prog("repo-done", {"slug": "orders", "nodes": 90, "edges": 40, "interfaces": 7,
+                       "skipped": 0})
+    mid = capsys.readouterr()
+
+    # printed before the second repo is touched, not after the sweep
+    assert "orders" in mid.out
+    assert "[1/2]" in mid.out and "90 symbols" in mid.out
+    assert "\r" not in mid.out and "\r" not in mid.err   # no control bytes in a log file
+    assert "call graph" not in mid.out                   # transient phase is tty-only
+
+    prog("repo-failed", {"slug": "billing", "error": "no manifest"})
+    end = capsys.readouterr()
+    assert "no manifest" in end.err and end.out == ""    # failures on stderr, as before
