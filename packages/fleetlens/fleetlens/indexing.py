@@ -162,7 +162,12 @@ def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats
     summary["interfaces"] = iface_summary.get("interfaces", 0)
     summary["outbound"] = len(x["outbound"])
     summary["host_bindings"] = len(x["host_bindings"])
-    summary["skipped"] = len(x["skipped"])
+    # Files nobody could parse are counted apart from unresolved sites. An unresolved site
+    # is a route we saw and could not finish reading; an unreadable file is a route we may
+    # never have seen at all, which bounds every other number in the summary.
+    unreadable = [s for s in x["skipped"] if s.get("reason") == "unparseable-file"]
+    summary["unreadable"] = len(unreadable)
+    summary["skipped"] = len(x["skipped"]) - len(unreadable)
     if llm is not None and x["skipped"]:
         from .enrich.gaps import fill_gaps
         if progress:

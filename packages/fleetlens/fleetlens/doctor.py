@@ -191,10 +191,23 @@ def check_interfaces(rep: Report, repo: Path) -> None:
         return
 
     unknown = [s for s in skipped if s.reason == "unrecognised-route-registration"]
-    unresolved = [s for s in skipped if s.reason != "unrecognised-route-registration"]
+    unreadable = [s for s in skipped if s.reason == "unparseable-file"]
+    unresolved = [s for s in skipped
+                  if s.reason not in ("unrecognised-route-registration", "unparseable-file")]
     detail = f"{len(found)} found, {len(unresolved)} unresolved, {len(unknown)} unrecognised"
+    if unreadable:
+        detail += f", {len(unreadable)} file(s) unreadable"
 
-    if unknown:
+    if unreadable:
+        # Reported before the others because it bounds everything else: whatever those
+        # files declare was never seen, so the counts beside it are of what was readable.
+        rep.add("interfaces", WARN, detail,
+                f"{len(unreadable)} file(s) could not be parsed, so any route in them is "
+                f"missing from the index: "
+                + "; ".join(f"{s.file} ({s.expr})" for s in unreadable[:3])
+                + (" and others" if len(unreadable) > 3 else "")
+                + ". Usually syntax from an older Python than the one running fleetlens.")
+    elif unknown:
         where = sorted({s.file for s in unknown})[:3]
         rep.add("interfaces", WARN, detail,
                 "route registrations no adapter recognised, in "

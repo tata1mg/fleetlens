@@ -167,6 +167,8 @@ def _repo_row(s: dict, i: int = 0, n: int = 0) -> str:
     g = s.get("gaps")
     tail = (f"  {g['resolved']}/{s['skipped']} gaps filled" if g
             else f"  {s.get('skipped', 0):2} unresolved")
+    if s.get("unreadable"):
+        tail += f"  {s['unreadable']} unreadable"
     # A repo indexed without a call graph still carries interfaces and edges, so it is a
     # success, but silently reporting "0 symbols" would read as a parser failure.
     mark = "ok  " if s.get("call_graph") != "unavailable" else "part"
@@ -265,6 +267,7 @@ def _cmd_index(args) -> int:
               f"({s['nodes']} symbols, {s['edges']} calls, "
               f"{s['interfaces']} interfaces, {s['handled_by']} handled_by"
               + (f", {s['skipped']} unresolved sites" if s.get("skipped") else "")
+              + (f", {s['unreadable']} UNREADABLE file(s)" if s.get("unreadable") else "")
               + (", NO call graph" if s.get("call_graph") == "unavailable" else "") + ")")
         if s.get("call_graph") == "unavailable":
             print(f"fl index: {s['slug']} indexed without a call graph; interfaces and "

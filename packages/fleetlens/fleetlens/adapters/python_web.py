@@ -220,6 +220,21 @@ def route_path(literal: str):
     return literal if literal.startswith("/") else "/" + literal
 
 
+_VERSION_SEGMENT = re.compile(r"^/v[\w.]+(?=/|$)")
+
+
+def _reversion(prefix: str, override: str) -> str:
+    """`prefix` with its version segment replaced by the one a route declared.
+
+    A route's own `version=` replaces its blueprint's rather than adding to it, so
+    `/v4/merchant` under `@route(..., version=5)` is `/v5/merchant`, not `/v5/v4/merchant`.
+    """
+    if not override:
+        return prefix
+    return _VERSION_SEGMENT.sub(override, prefix, count=1) \
+        if _VERSION_SEGMENT.match(prefix) else override + prefix
+
+
 def join_path(prefix: str, path: str) -> str:
     """A router's prefix and a route's path as one path, with exactly one slash between."""
     return (prefix.rstrip("/") + path) if prefix else path
@@ -408,6 +423,10 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
             path = route_path(_str(node_))
             if path is None:
                 continue              # a mock target, not a route
+            # Sanic lets a route carry its own `version=`, which replaces the one its
+            # blueprint declared. Reading only the blueprint's put a v5 endpoint at the v4
+            # path, where it collided with the real v4 route and was lost.
+            override = own_prefix(dec)
             receiver = ("" if bare
                         else dec.func.value.id if isinstance(dec.func.value, ast.Name)
                         else "")
@@ -415,7 +434,7 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
                        else _methods_kwarg(dec) or ["GET"])
             summary = (ast.get_docstring(node) or "").split("\n")[0].strip() or None
             for prefix in _prefixes_of(receiver, prefixes, mounts, module):
-                full = join_path(prefix, path)
+                full = join_path(_reversion(prefix, override), path)
                 for m in methods:
                     out.append(Interface(
                         method=m, path=full, type="rest", handler=node.name,
@@ -444,8 +463,18 @@ class PythonWebAdapter(InterfaceAdapter):
         mounts = MountGraph(repo)
         out: list[Interface] = []
         for p in _iter_py(repo):
-            src, tree = read_and_parse(p)
+            errors: list = []
+            src, tree = read_and_parse(p, errors)
             if tree is None:
+                # A file nobody can parse is skipped, not fatal -- a repo may hold a Python
+                # 2 module or a deliberately broken fixture. But skipping it in silence is
+                # how a service serving 149 endpoints indexed 5: one route file used syntax
+                # a current interpreter rejects, and the absence looked like an answer.
+                if skipped is not None and errors:
+                    skipped.append(SkippedSite(
+                        kind="interface", reason="unparseable-file",
+                        file=p.relative_to(repo).as_posix(), line=0,
+                        expr=errors[0], snippet="", names=[], method=None))
                 continue
             fw = _framework_of(tree)
             # A module with no recognised framework import is still read when it registers

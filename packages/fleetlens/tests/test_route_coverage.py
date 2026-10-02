@@ -282,12 +282,31 @@ async def amend(order_id: str): ...
     assert {f.name for f in found} == {"GET /health", "PATCH /orders/{order_id}"}
 
 
+def test_a_route_can_override_its_blueprint_s_version(tmp_path):
+    """Sanic lets a route carry its own `version=`, which replaces the blueprint's. Reading
+    only the blueprint's put a v5 endpoint at the v4 path, where it collided with the real
+    v4 route and was dropped -- the service lost an endpoint nobody could see was missing.
+    """
+    found, _ = _found(tmp_path, '''
+from sanic import Blueprint
+
+merchant = Blueprint("merchant", version=4)
+
+@merchant.route("/merchant/generate_hash", methods=["POST"])
+async def generate_hash(request): ...
+
+@merchant.route("/merchant/generate_hash", methods=["POST"], version=5)
+async def generate_hash_v5(request): ...
+''')
+    assert {f.name for f in found} == {"POST /v4/merchant/generate_hash",
+                                       "POST /v5/merchant/generate_hash"}
+
+
 def test_two_routes_collapsing_onto_one_path_are_recorded(tmp_path):
-    """Only one route can serve a path, so the repeat collapses either way. What must not
-    happen is it collapsing silently: a real service declared /merchant/generate_hash twice,
-    once with a per-route version override we did not read, and the second endpoint left no
-    trace anywhere. The surviving interface now carries both source lines, and the collision
-    is a skipped site `fl doctor` can report.
+    """Only one route can serve a path, so a genuine repeat collapses either way. What must
+    not happen is it collapsing silently: when a path bug makes two different endpoints land
+    together, the second used to vanish without a trace. The surviving interface now carries
+    both source lines and the collision is a skipped site `fl doctor` can report.
     """
     from fleetlens.adapters.registry import discover_interfaces
 
@@ -300,8 +319,8 @@ merchant = Blueprint("merchant", version=4)
 @merchant.route("/merchant/generate_hash", methods=["POST"])
 async def generate_hash(request): ...
 
-@merchant.route("/merchant/generate_hash", methods=["POST"], version=5)
-async def generate_hash_v5(request): ...
+@merchant.route("/merchant/generate_hash", methods=["POST"])
+async def generate_hash_again(request): ...
 ''')
     skipped: list = []
     found = discover_interfaces(tmp_path, skipped)
@@ -310,3 +329,25 @@ async def generate_hash_v5(request): ...
     assert len(found[0].evidence) == 2                      # both declarations are kept
     dupes = [s for s in skipped if s.reason == "duplicate-path"]
     assert len(dupes) == 1 and dupes[0].method == "POST"
+
+
+def test_a_file_that_cannot_be_parsed_is_counted(tmp_path):
+    """A service serving 149 endpoints indexed 5, because one route file used syntax a
+    current interpreter rejects and nothing said so. Skipping the file is right; skipping
+    it in silence made the absence look like an answer.
+    """
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "ok.py").write_text(
+        'from fastapi import APIRouter\nrouter = APIRouter()\n'
+        '@router.get("/health")\nasync def health(): ...\n')
+    # `async` became a reserved word in Python 3.7; this is real code from a live service
+    (tmp_path / "app" / "legacy.py").write_text(
+        "from asyncio import async as call_asynchronously\n")
+
+    skipped: list = []
+    found = PythonWebAdapter().discover(tmp_path, skipped)
+
+    assert [f.name for f in found] == ["GET /health"]
+    bad = [s for s in skipped if s.reason == "unparseable-file"]
+    assert [s.file for s in bad] == ["app/legacy.py"]
+    assert "SyntaxError" in bad[0].expr and "line 1" in bad[0].expr
