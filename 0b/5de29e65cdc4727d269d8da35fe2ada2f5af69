@@ -1,0 +1,21 @@
+README.md
+  s_d5ea2fae8a9c21::t_6300f72765bd77 398-444
+ROADMAP.md
+  s_d5ea2fae8a9c21::t_e3982440615b5b 55-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "0b5de29e65cdc4727d269d8da35fe2ada2f5af69",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
