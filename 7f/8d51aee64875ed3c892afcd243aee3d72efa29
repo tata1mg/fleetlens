@@ -1,0 +1,23 @@
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_9dd41583e7abdb 426
+packages/fleetlens/fleetlens/server/http.py
+  s_d5ea2fae8a9c21::t_9dd41583e7abdb 90-95,97-100,102-104,112-113
+packages/fleetlens/tests/test_serve_http.py
+  s_d5ea2fae8a9c21::t_961e06b204e8cd 166-170,173-175,179,187
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "7f8d51aee64875ed3c892afcd243aee3d72efa29",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
