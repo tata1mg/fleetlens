@@ -86,6 +86,35 @@ def build_reload_middleware(store):
     return ReloadIndex
 
 
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def security_settings(host: str, allowed_hosts: list):
+    """DNS-rebinding policy for the configured bind address.
+
+    The MCP SDK turns Host validation on whenever its host looks like loopback, and it
+    decides that when the server object is built. fleetlens built the server first and set
+    the host afterwards, so a server bound to 0.0.0.0 kept the loopback policy and rejected
+    every real client with "Invalid Host header".
+
+    The protection guards a browser being tricked into reaching a server on the user's own
+    machine. A server deliberately bound to an address other than loopback is not that
+    case, and its control is the bearer token, so Host validation is off there unless the
+    operator names the hosts to accept.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    if allowed_hosts:
+        return TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=[*allowed_hosts, *(f"{h}:*" for h in allowed_hosts)],
+            allowed_origins=[f"http://{h}" for h in allowed_hosts]
+            + [f"https://{h}" for h in allowed_hosts])
+    if host in LOOPBACK:
+        return None                   # the SDK's own loopback policy is right here
+    return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+
+
 def serve(mcp, host: str, port: int, token: str, store) -> None:
     """Run the FastMCP streamable-HTTP app under uvicorn."""
     try:

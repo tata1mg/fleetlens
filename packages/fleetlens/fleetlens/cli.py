@@ -415,7 +415,16 @@ def _cmd_serve(args) -> int:
     # behind a tool-search step. Benchmarking showed the agent used fleetlens in only 9 of
     # 24 runs, and in every one of those 9 it had first searched for tools — so telling the
     # client what this server is FOR is the lever that decides whether it gets used at all.
-    mcp = FastMCP("fleetlens", instructions=(
+    # Host and port go in at construction, not after. The SDK fixes its DNS-rebinding
+    # policy from the host it is built with, so setting them later left a server bound to
+    # 0.0.0.0 enforcing a loopback-only Host allowlist.
+    server_kwargs: dict = {}
+    if args.http:
+        from .server.http import security_settings
+        server_kwargs = {"host": args.host, "port": args.port,
+                         "transport_security": security_settings(
+                             args.host, [h for h in args.allowed_host if h])}
+    mcp = FastMCP("fleetlens", **server_kwargs, instructions=(
         "Cross-repository microservice context for this codebase: the service dependency "
         "graph, every service's HTTP endpoints and message queues, and the call graph "
         "behind them — derived from source, not from a hand-written catalog.\n\n"
@@ -513,6 +522,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="with --http: env var holding the shared bearer token")
     p.add_argument("--insecure", action="store_true",
                    help="with --http: serve with NO authentication. Local trials only.")
+    p.add_argument("--allowed-host", action="append", default=[], metavar="HOST",
+                   help="with --http: accept only these Host headers (repeatable). "
+                        "Off by default when binding a non-loopback address, where the "
+                        "bearer token is the control and Host validation guards nothing.")
     p.add_argument("--embed-model", default="", dest="embed_model",
                    help="enable semantic discover_* (use the SAME model you enriched with)")
     p.add_argument("--embed-provider", default="ollama", dest="embed_provider")

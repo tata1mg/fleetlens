@@ -161,3 +161,27 @@ def test_a_broken_dependency_is_not_reported_as_an_mcp_version_problem(capsys, m
     assert rc == 2
     assert "pydantic" in err                     # names what actually failed
     assert "mcp>=1.2.0,<2.0" not in err          # and does not blame mcp's version
+
+
+def test_a_non_loopback_bind_does_not_keep_the_loopback_host_policy():
+    """The SDK fixes its DNS-rebinding policy from the host the server is built with, and
+    turns Host validation on for loopback. Building the server first and setting the host
+    afterwards left a server on 0.0.0.0 rejecting every real client with
+    "Invalid Host header"."""
+    from fleetlens.server.http import security_settings
+
+    wide = security_settings("0.0.0.0", [])
+    assert wide is not None and wide.enable_dns_rebinding_protection is False
+
+    # loopback keeps the SDK's own policy, which is correct there
+    assert security_settings("127.0.0.1", []) is None
+
+
+def test_an_operator_can_still_pin_the_accepted_hosts():
+    from fleetlens.server.http import security_settings
+
+    s = security_settings("0.0.0.0", ["fleetlens.internal", "10.1.7.242"])
+    assert s.enable_dns_rebinding_protection is True
+    assert "fleetlens.internal" in s.allowed_hosts
+    assert "fleetlens.internal:*" in s.allowed_hosts     # any port on that host
+    assert "10.1.7.242:*" in s.allowed_hosts
