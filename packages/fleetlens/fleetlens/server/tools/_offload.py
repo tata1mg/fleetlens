@@ -25,9 +25,37 @@ SQLite allows any number of concurrent readers.
 from __future__ import annotations
 
 import functools
+import os
 from collections.abc import Callable
 
 import anyio.to_thread
+
+#: How many tool bodies may run at once.
+#:
+#: anyio defaults to 40. Most of a tool's cost is building its response in Python, which
+#: holds the GIL, so extra threads add switching rather than parallelism and the tools with
+#: the largest responses got slower under load. Measured at concurrency 8 on one index:
+#:
+#:     workers        2      4      6      8     40
+#:     service_graph  590    683    827   1263   1343  ms
+#:     index_info      15.8   12.8   15.8   38     17  ms
+#:
+#: Four is the compromise: the response-heavy tools are near their best and the cheap ones
+#: are at theirs. It is not sized for parallelism, which the GIL caps anyway, but so that a
+#: slow call occupies one slot out of four instead of stopping the server. A host with a
+#: different shape of workload can set FLEETLENS_TOOL_WORKERS.
+WORKERS = int(os.environ.get("FLEETLENS_TOOL_WORKERS", "0")) or 4
+
+_sized = False
+
+
+def _limiter():
+    global _sized
+    limiter = anyio.to_thread.current_default_thread_limiter()
+    if not _sized:
+        limiter.total_tokens = WORKERS
+        _sized = True
+    return limiter
 
 
 def offloaded(fn: Callable) -> Callable:
@@ -38,5 +66,6 @@ def offloaded(fn: Callable) -> Callable:
     """
     @functools.wraps(fn)
     async def run(*args, **kwargs):
-        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs))
+        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs),
+                                              limiter=_limiter())
     return run
