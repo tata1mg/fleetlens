@@ -28,9 +28,11 @@ the above claimed is recorded as an `unrecognised-route-registration` skipped si
 keeps the failure mode visible: a route fleetlens cannot parse is counted and can be
 resolved by the LLM tier, rather than quietly missing. `fl doctor <repo>` reports the split.
 
-Known limits: only module-local prefixes, so cross-module `include_router(prefix=...)` and
-`register_blueprint(url_prefix=)` composition is not followed. Non-literal paths are
-recorded, not guessed.
+Prefixes are resolved across the repository, because a router is nearly always mounted in
+a different file from the one declaring its routes; see `_mounts.py`.
+
+Known limits: a mount built at runtime is not followed, and non-literal paths are recorded,
+not guessed.
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ import ast
 import re
 from pathlib import Path
 
+from ._mounts import MountGraph, _module_of, own_prefix
 from ._pysrc import read_and_parse
 from ._walk import iter_files
 from .base import Interface, InterfaceAdapter, SkippedSite, names_in, snippet_of
@@ -99,18 +102,9 @@ def _prefixes(tree: ast.Module) -> dict:
                 and isinstance(node.targets[0], ast.Name)
                 and isinstance(node.value, ast.Call)):
             continue
-        prefix, version = "", ""
-        for kw in node.value.keywords:
-            if not isinstance(kw.value, ast.Constant):
-                continue
-            if kw.arg in ("prefix", "url_prefix"):
-                prefix = str(kw.value.value).strip("/")
-            elif kw.arg == "version" and kw.value.value is not None:
-                v = str(kw.value.value).strip("/")
-                version = v if v.startswith("v") else f"v{v}"
-        parts = [p for p in (version, prefix) if p]
-        if parts:
-            out[node.targets[0].id] = "/" + "/".join(parts)
+        prefix = own_prefix(node.value)
+        if prefix:
+            out[node.targets[0].id] = prefix
     return out
 
 
@@ -184,6 +178,24 @@ def unclaimed_route_candidates(tree: ast.Module, claimed: set, rel: str, src: st
     return out
 
 
+def _prefixes_of(receiver: str, prefixes: dict, mounts, module: str) -> list:
+    """Every URL prefix the router `receiver` serves under, so one per real path.
+
+    The graph knows where a router is mounted across the whole repository; `prefixes`
+    knows only what this one module declared. The graph wins whenever it has an answer,
+    because a prefix declared here is already folded into what it computed. A router it
+    has never seen, or one mounted in a way it cannot follow, keeps the module-local
+    answer, which is what this did before the graph existed.
+    """
+    if not receiver:
+        return [""]
+    if mounts is not None:
+        resolved = mounts.prefixes_for(module, receiver)
+        if resolved:
+            return resolved
+    return [prefixes.get(receiver, "")]
+
+
 def _handler_name(node) -> str:
     """The handler a route was registered with, however it was referred to."""
     if isinstance(node, ast.Name):
@@ -196,7 +208,7 @@ def _handler_name(node) -> str:
 
 
 def _from_add_route(call: ast.Call, prefixes: dict, framework: str, rel: str,
-                    src: str, lines: list, skipped) -> list:
+                    src: str, lines: list, skipped, mounts=None, module: str = "") -> list:
     """Routes from an imperative registration call.
 
     Argument order differs between frameworks: Sanic and Starlette take the handler first
@@ -222,12 +234,12 @@ def _from_add_route(call: ast.Call, prefixes: dict, framework: str, rel: str,
         if kw.arg in ("view_func", "endpoint", "handler") and not handler:
             handler = _handler_name(kw.value)
     receiver = call.func.value.id if isinstance(call.func.value, ast.Name) else ""
-    prefix = prefixes.get(receiver, "")
-    full = (prefix + path) if prefix else path
     methods = _methods_kwarg(call) or ["GET"]
-    return [Interface(method=m, path=full, type="rest", handler=handler or None,
-                      summary=None, framework=framework,
-                      evidence=[f"{rel}:{call.lineno}"]) for m in methods]
+    return [Interface(method=m, path=(prefix + path) if prefix else path, type="rest",
+                      handler=handler or None, summary=None, framework=framework,
+                      evidence=[f"{rel}:{call.lineno}"])
+            for prefix in _prefixes_of(receiver, prefixes, mounts, module)
+            for m in methods]
 
 
 def _methods_kwarg(call: ast.Call):
@@ -314,7 +326,8 @@ def _framework_of(tree: ast.Module) -> str | None:
 
 
 def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
-               skipped: list[SkippedSite] | None = None) -> list[Interface]:
+               skipped: list[SkippedSite] | None = None, mounts=None,
+               module: str = "") -> list[Interface]:
     prefixes = _prefixes(tree)
     bare_ok = _bare_verb_routes(tree)
     lines = src.splitlines()
@@ -327,7 +340,8 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) \
                 and node.func.attr in _ADD_ROUTE_ATTRS:
             claimed.add(node.lineno)
-            out.extend(_from_add_route(node, prefixes, framework, rel, src, lines, skipped))
+            out.extend(_from_add_route(node, prefixes, framework, rel, src, lines,
+                                       skipped, mounts, module))
             continue
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
@@ -361,20 +375,20 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
                         method=literal[0] if literal and len(literal) == 1 else None))
                 continue
             path = _str(node_)
-            prefix = ("" if bare else
-                      prefixes.get(dec.func.value.id, "")
-                      if isinstance(dec.func.value, ast.Name) else "")
-            full = (prefix + path) if prefix else path
-            if attr in _VERBS:
-                methods = [attr.upper()]
-            else:
-                methods = _methods_kwarg(dec) or ["GET"]
-            for m in methods:
-                out.append(Interface(
-                    method=m, path=full, type="rest", handler=node.name,
-                    summary=(ast.get_docstring(node) or "").split("\n")[0].strip() or None,
-                    framework=framework, evidence=[f"{rel}:{node.lineno}"],
-                ))
+            receiver = ("" if bare
+                        else dec.func.value.id if isinstance(dec.func.value, ast.Name)
+                        else "")
+            methods = ([attr.upper()] if attr in _VERBS
+                       else _methods_kwarg(dec) or ["GET"])
+            summary = (ast.get_docstring(node) or "").split("\n")[0].strip() or None
+            for prefix in _prefixes_of(receiver, prefixes, mounts, module):
+                full = (prefix + path) if prefix else path
+                for m in methods:
+                    out.append(Interface(
+                        method=m, path=full, type="rest", handler=node.name,
+                        summary=summary, framework=framework,
+                        evidence=[f"{rel}:{node.lineno}"],
+                    ))
     if skipped is not None:
         skipped.extend(unclaimed_route_candidates(tree, claimed, rel, src, lines))
     return out
@@ -392,6 +406,9 @@ class PythonWebAdapter(InterfaceAdapter):
 
     def discover(self, repo: Path, skipped: list[SkippedSite] | None = None) -> list[Interface]:
         repo = Path(repo)
+        # Built once for the repository: a route's real path depends on where its router
+        # is mounted, which is nearly always a different file from the one declaring it.
+        mounts = MountGraph(repo)
         out: list[Interface] = []
         for p in _iter_py(repo):
             src, tree = read_and_parse(p)
@@ -404,5 +421,6 @@ class PythonWebAdapter(InterfaceAdapter):
             # reads as a service with no API rather than as a gap.
             if fw is None and not _has_route_idiom(tree):
                 continue
-            out += _routes_in(tree, p.relative_to(repo).as_posix(), fw, src, skipped)
+            out += _routes_in(tree, p.relative_to(repo).as_posix(), fw, src, skipped,
+                              mounts, _module_of(p, repo)[0])
         return out
