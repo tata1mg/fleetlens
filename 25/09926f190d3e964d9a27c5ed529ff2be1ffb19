@@ -1,0 +1,22 @@
+README.md
+  s_d5ea2fae8a9c21::t_6b37d9402ab00c 23-45
+  s_d5ea2fae8a9c21::t_95c08b50d1882a 352-355,357-358,360,372,374-375,377-382
+  s_d5ea2fae8a9c21::t_9090a6878b3c59 392-398
+  s_d5ea2fae8a9c21::t_a38d9eb9573745 342-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "2509926f190d3e964d9a27c5ed529ff2be1ffb19",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
