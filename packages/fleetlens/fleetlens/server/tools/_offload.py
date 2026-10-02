@@ -34,17 +34,23 @@ import anyio.to_thread
 #:
 #: anyio defaults to 40. Most of a tool's cost is building its response in Python, which
 #: holds the GIL, so extra threads add switching rather than parallelism and the tools with
-#: the largest responses got slower under load. Measured at concurrency 8 on one index:
+#: the largest responses get slower under load. Two hosts, both measured at concurrency 8
+#: and 16, agree on the shape:
 #:
-#:     workers        2      4      6      8     40
-#:     service_graph  590    683    827   1263   1343  ms
-#:     index_info      15.8   12.8   15.8   38     17  ms
+#:     workers                    2       4       8      40
+#:     get_service_graph, c=8    582     892    1263    1343  ms
+#:     get_service_graph, c=16  1196    1781       -       -  ms
 #:
-#: Four is the compromise: the response-heavy tools are near their best and the cheap ones
-#: are at theirs. It is not sized for parallelism, which the GIL caps anyway, but so that a
-#: slow call occupies one slot out of four instead of stopping the server. A host with a
-#: different shape of workload can set FLEETLENS_TOOL_WORKERS.
-WORKERS = int(os.environ.get("FLEETLENS_TOOL_WORKERS", "0")) or 4
+#: Everything else moves by less than noise, except the full-scan case in `find_symbol`,
+#: which is SQL rather than Python, releases the GIL and is about 10% happier with more
+#: threads. Two is the better trade while `get_service_graph` is the entry point the tool
+#: descriptions point clients at.
+#:
+#: The pool is not sized for parallelism, which the GIL caps anyway, but so that a slow
+#: call does not stop the server. Two slots means one scan still leaves a free slot and two
+#: concurrent scans will delay a cheap call; four gave more headroom there and cost a third
+#: of `get_service_graph`. A host that mostly serves scans can raise it.
+WORKERS = int(os.environ.get("FLEETLENS_TOOL_WORKERS", "0")) or 2
 
 _sized = False
 
