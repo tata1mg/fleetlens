@@ -1,0 +1,32 @@
+packages/fleetlens/tests/test_mounts.py
+  s_d5ea2fae8a9c21::t_48c3d429860990 209-256
+packages/fleetlens/fleetlens/adapters/registry.py
+  s_d5ea2fae8a9c21::t_ce9ec237fd1bb0 23,33,45
+  s_d5ea2fae8a9c21::t_16ce5f477ca304 22,24-32,35,42-44,47-59
+packages/fleetlens/tests/test_ruby_adapters.py
+  s_d5ea2fae8a9c21::t_48c3d429860990 161-201
+packages/fleetlens/fleetlens/adapters/ruby_web.py
+  s_d5ea2fae8a9c21::t_3bf5e375b40918 56-70,212-218
+packages/fleetlens/fleetlens/adapters/_mounts.py
+  s_d5ea2fae8a9c21::t_9a99b7fb34ff26 106-123,199-202,204-218,228-229,231
+  s_d5ea2fae8a9c21::t_cf8df26ca0ff11 135,148-152,160-187,203,219-226
+  s_d5ea2fae8a9c21::t_529f9afddd021b 227
+packages/fleetlens/tests/test_route_coverage.py
+  s_d5ea2fae8a9c21::t_d2685e12bbb839 283-312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "ceb2dd51c48c22cb9cfde5bf4c5a92990b32bd0c",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
