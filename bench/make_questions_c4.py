@@ -4,6 +4,12 @@ Ground truth is derived here, independently of fleetlens, by simple regex over s
 config. A deliberately different and simpler method than fleetlens's AST/SCIP pipeline, so
 the two do not share an implementation and cannot share a blind spot by construction.
 
+Simpler must not mean narrower than the thing being measured. The first version matched one
+spelling of a route decorator over Python files only, so a Rails service and three services
+using a house framework read as exposing no HTTP surface, and fleetlens would have been
+marked wrong for finding routes that are plainly there. Independence is the point of this
+file; being less capable than the tool under test is not.
+
 Questions target what a single grep cannot do cheaply: exhaustive enumeration over 16 repos,
 reverse lookups, set intersections, ranking, and negative claims. The pilot showed that
 questions answerable by locating one literal string measure grep, not fleetlens.
@@ -27,7 +33,15 @@ SKIP = {"venv", ".venv", "node_modules", ".git", "__pycache__", ".context", ".cl
 # first pass: droplet's settings.yml declares a dependency fleetlens found and we did not.
 HOSTKEY = re.compile(r"""["']([A-Za-z0-9_.\-]*(?:HOST|URL|ENDPOINT|BASE_URI)[A-Za-z0-9_.\-]*)["']\s*:\s*["']([^"']+)["']""", re.I)
 HOSTKEY_YAML = re.compile(r"""^\s*([A-Za-z0-9_.\-]*(?:HOST|URL|ENDPOINT|BASE_URI)[A-Za-z0-9_.\-]*)\s*:\s*['"]?([^'"\n#]+)""", re.I | re.M)
-ROUTE = re.compile(r"""@(\w+)\.(route|get|post|put|patch|delete)\(\s*["']([^"']+)["']""")
+# Attribute form (`@app.get("/x")`), bare form (`@get("/x")`, used by house frameworks that
+# export their verbs as functions), and the path given as a keyword. Matching only the first
+# understated this corpus badly: four services looked like they exposed no HTTP surface at
+# all, which is a wrong answer to the "routes AND a queue" question, not a conservative one.
+ROUTE = re.compile(
+    r"""@(?:\w+\.)?(?:route|get|post|put|patch|delete)\(\s*(?:path\s*=\s*)?["']([^"']+)["']""")
+# Rails declares its surface in a routing DSL rather than in decorators, so a Python-only
+# scan reports a Rails service as having no routes. droplet has 618 of them.
+ROUTE_RB = re.compile(r"""^\s*(?:get|post|put|patch|delete|resources?)\s+['":]""", re.M)
 QUEUE = re.compile(r"""["']([A-Za-z0-9_.\-]*(?:QUEUE|TOPIC)[A-Za-z0-9_.\-]*)["']\s*:\s*["']([^"']+)["']""", re.I)
 ENVPFX = re.compile(r"^(<\s*env_name\s*>|stag|staging|prod|production|pluto|neptune)-")
 
@@ -61,7 +75,13 @@ def derive():
             except OSError:
                 continue
             for m in ROUTE.finditer(t):
-                routes[u].add(m.group(3))
+                routes[u].add(m.group(1))
+        for f in list(d.glob("config/routes.rb")) + list(d.glob("config/routes/*.rb")):
+            try:
+                routes[u].update(m.group(0).strip()
+                                 for m in ROUTE_RB.finditer(f.read_text(errors="replace")))
+            except OSError:
+                continue
         for f in (list(d.rglob("config*.json")) + list(d.rglob("*.yml"))
                   + list(d.rglob("*.yaml")) + list(d.rglob("config/*.yml"))):
             if any(s in f.parts for s in SKIP):
