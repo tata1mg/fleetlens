@@ -423,7 +423,7 @@ def _cmd_serve(args) -> int:
         from .server.http import security_settings
         server_kwargs = {"host": args.host, "port": args.port,
                          "transport_security": security_settings(
-                             args.host, [h for h in args.allowed_host if h])}
+                             args.host, [h for h in (args.allowed_host or []) if h])}
     mcp = FastMCP("fleetlens", **server_kwargs, instructions=(
         "Cross-repository microservice context for this codebase: the service dependency "
         "graph, every service's HTTP endpoints and message queues, and the call graph "

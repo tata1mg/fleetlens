@@ -86,21 +86,22 @@ def build_reload_middleware(store):
     return ReloadIndex
 
 
-LOOPBACK = ("127.0.0.1", "localhost", "::1")
-
-
 def security_settings(host: str, allowed_hosts: list):
-    """DNS-rebinding policy for the configured bind address.
+    """DNS-rebinding policy. Off unless the operator asks for it.
 
-    The MCP SDK turns Host validation on whenever its host looks like loopback, and it
-    decides that when the server object is built. fleetlens built the server first and set
-    the host afterwards, so a server bound to 0.0.0.0 kept the loopback policy and rejected
-    every real client with "Invalid Host header".
+    The MCP SDK validates the Host header by default on a loopback bind, and decides that
+    when the server object is constructed. That protection exists for a server with no
+    authentication: it stops a web page the user happens to visit from reaching a service
+    on their own machine, because a browser will send requests but cannot forge a Host.
 
-    The protection guards a browser being tricked into reaching a server on the user's own
-    machine. A server deliberately bound to an address other than loopback is not that
-    case, and its control is the bearer token, so Host validation is off there unless the
-    operator names the hosts to accept.
+    Here every request already needs a bearer token, which that page does not have. So the
+    Host check guards nothing the token does not already guard, while rejecting ordinary
+    clients that reach the server by its address or a DNS name. `--allowed-host` turns it
+    back on for anyone who wants defence in depth.
+
+    The one case where it would carry weight is `--insecure`, where there is no token. That
+    flag already says in plain terms that anyone who can reach the port can read the whole
+    index, which is the more important thing to understand.
     """
     from mcp.server.transport_security import TransportSecuritySettings
 
@@ -108,10 +109,8 @@ def security_settings(host: str, allowed_hosts: list):
         return TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
             allowed_hosts=[*allowed_hosts, *(f"{h}:*" for h in allowed_hosts)],
-            allowed_origins=[f"http://{h}" for h in allowed_hosts]
-            + [f"https://{h}" for h in allowed_hosts])
-    if host in LOOPBACK:
-        return None                   # the SDK's own loopback policy is right here
+            allowed_origins=[f"{scheme}://{h}" for h in allowed_hosts
+                             for scheme in ("http", "https")])
     return TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 
