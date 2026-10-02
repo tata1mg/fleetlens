@@ -196,6 +196,35 @@ def _prefixes_of(receiver: str, prefixes: dict, mounts, module: str) -> list:
     return [prefixes.get(receiver, "")]
 
 
+#: A dotted Python name with no slash in it: `app.services.orders.fetch_order`. Not a URL,
+#: however much it looks like one to a reader of string literals.
+_DOTTED_NAME = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
+
+
+def route_path(literal: str):
+    """The URL path a route decorator's literal denotes, or None if it denotes something
+    else.
+
+    Frameworks accept a path written without its leading slash and supply one. Sanic says
+    so in as many words -- "Fix case where the user did not prefix the URL with a /" -- and
+    does it before composing any prefix; Flask joins on the slash; FastAPI requires it.
+    Concatenating a prefix with the literal as written therefore reported
+    `/v4prescriptions/status` for a route the service serves at `/v4/prescriptions/status`.
+
+    The None case is `mock.patch`, which shares its name with the HTTP verb: a decorator
+    `@patch("app.orders.fetch")` was being reported as a PATCH endpoint, and normalising
+    the slash would have promoted it to `/app.orders.fetch`.
+    """
+    if _DOTTED_NAME.match(literal):
+        return None
+    return literal if literal.startswith("/") else "/" + literal
+
+
+def join_path(prefix: str, path: str) -> str:
+    """A router's prefix and a route's path as one path, with exactly one slash between."""
+    return (prefix.rstrip("/") + path) if prefix else path
+
+
 def _handler_name(node) -> str:
     """The handler a route was registered with, however it was referred to."""
     if isinstance(node, ast.Name):
@@ -228,14 +257,16 @@ def _from_add_route(call: ast.Call, prefixes: dict, framework: str, rel: str,
                 names=names_in(call), method=None))
         return []
 
-    path = _str(path_arg)
+    path = route_path(_str(path_arg))
+    if path is None:
+        return []
     handler = next((_handler_name(a) for a in call.args if a is not path_arg), "")
     for kw in call.keywords:                      # Flask: add_url_rule(rule, endpoint, view_func=)
         if kw.arg in ("view_func", "endpoint", "handler") and not handler:
             handler = _handler_name(kw.value)
     receiver = call.func.value.id if isinstance(call.func.value, ast.Name) else ""
     methods = _methods_kwarg(call) or ["GET"]
-    return [Interface(method=m, path=(prefix + path) if prefix else path, type="rest",
+    return [Interface(method=m, path=join_path(prefix, path), type="rest",
                       handler=handler or None, summary=None, framework=framework,
                       evidence=[f"{rel}:{call.lineno}"])
             for prefix in _prefixes_of(receiver, prefixes, mounts, module)
@@ -374,7 +405,9 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
                         names=names_in(dec),
                         method=literal[0] if literal and len(literal) == 1 else None))
                 continue
-            path = _str(node_)
+            path = route_path(_str(node_))
+            if path is None:
+                continue              # a mock target, not a route
             receiver = ("" if bare
                         else dec.func.value.id if isinstance(dec.func.value, ast.Name)
                         else "")
@@ -382,7 +415,7 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
                        else _methods_kwarg(dec) or ["GET"])
             summary = (ast.get_docstring(node) or "").split("\n")[0].strip() or None
             for prefix in _prefixes_of(receiver, prefixes, mounts, module):
-                full = (prefix + path) if prefix else path
+                full = join_path(prefix, path)
                 for m in methods:
                     out.append(Interface(
                         method=m, path=full, type="rest", handler=node.name,

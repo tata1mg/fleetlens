@@ -79,3 +79,20 @@ def test_list_objects_excludes_stubs():
     ids = [o.id for o in s.list_objects("code_symbol")]
     assert ids == ["code_symbol:svc:real"]
     assert len(s.list_objects("code_symbol", include_stubs=True)) == 2
+
+
+def test_index_info_counts_the_symbols_that_are_there(tmp_path):
+    """get_index_info is what a client calls to decide whether to trust the index, so it
+    reporting zero symbols for an index full of them is worse than it not existing."""
+    from fleetlens.loaders.callgraph import NODE_TYPE as SYMBOL_TYPE
+    from fleetlens.store.models import KnowledgeObject
+    from fleetlens.store.sqlite import SqliteStore
+
+    store = SqliteStore(str(tmp_path / "f.db"))
+    store.upsert_object(KnowledgeObject(
+        object_type=SYMBOL_TYPE, object_id="orders:app.main.handler", name="handler",
+        summary=None, version="unknown", source="static", generation_strategy="index",
+        last_generated_at=None, embed_text=None, payload={}))
+    store.commit()
+
+    assert store.index_info()["symbols"] == 1

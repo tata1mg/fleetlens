@@ -220,3 +220,63 @@ async def orders(request): ...
 ''')
     assert [f.name for f in found] == ["GET /v4/health"]
     assert [(s.reason, s.method) for s in skipped] == [("non-literal-path", "GET")]
+
+
+# --- the literal is not the path ----------------------------------------------------
+
+def test_a_route_written_without_its_leading_slash_still_joins_on_one(tmp_path):
+    """A real service reported `/v4prescriptions/status` for an endpoint served at
+    `/v4/prescriptions/status`.
+
+    Frameworks supply the missing slash before composing any prefix. Sanic says so in a
+    comment -- "Fix case where the user did not prefix the URL with a /" -- Flask joins on
+    the slash, and FastAPI requires one. Concatenating the literal as written was the only
+    party that did not.
+    """
+    found, _ = _found(tmp_path, '''
+from sanic import Blueprint
+
+prescription = Blueprint("prescription", version=4)
+
+@prescription.route("prescriptions/status", methods=["POST"])
+async def status(request): ...
+
+@prescription.route("/presigned_urls", methods=["POST"])
+async def presigned(request): ...
+''')
+    assert {f.name for f in found} == {"POST /v4/prescriptions/status",
+                                       "POST /v4/presigned_urls"}
+
+
+def test_a_prefix_and_a_path_never_produce_a_double_slash(tmp_path):
+    found, _ = _found(tmp_path, '''
+from flask import Blueprint
+
+bp = Blueprint("shop", __name__, url_prefix="/shop/")
+
+@bp.route("/items")
+def items(): ...
+''')
+    assert [f.name for f in found] == ["GET /shop/items"]
+
+
+def test_a_mock_patch_target_is_not_a_patch_endpoint(tmp_path):
+    """`mock.patch` shares its name with the HTTP verb, so `@patch("app.orders.fetch")`
+    was reported as an endpoint. Normalising the leading slash would have made it worse by
+    promoting it to `/app.orders.fetch`."""
+    found, _ = _found(tmp_path, '''
+from unittest import mock
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/health")
+async def health(): ...
+
+@mock.patch("app.services.orders.fetch_order")
+def test_fetch(m): ...
+
+@router.patch("/orders/{order_id}")
+async def amend(order_id: str): ...
+''')
+    assert {f.name for f in found} == {"GET /health", "PATCH /orders/{order_id}"}

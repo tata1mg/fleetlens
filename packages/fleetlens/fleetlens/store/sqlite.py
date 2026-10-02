@@ -181,7 +181,10 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         edges = self._conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
         return {"indexed_at": built, "services": counts.get("service", 0),
                 "interfaces": counts.get("interface", 0),
-                "symbols": counts.get("symbol", 0), "relationships": edges}
+                # "code_symbol", the name the call-graph loader writes. Looking up
+                # "symbol" quietly reported 0 on an index holding half a million of them,
+                # on the one tool whose job is telling you whether to trust the rest.
+                "symbols": counts.get("code_symbol", 0), "relationships": edges}
 
     def commit(self) -> None:
         self._conn.commit()
