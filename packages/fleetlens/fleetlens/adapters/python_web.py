@@ -1,10 +1,23 @@
-"""Adapter for Python web frameworks: FastAPI, Flask, Sanic, Starlette.
+"""Adapter for Python web frameworks.
 
-Two registration styles, because real services use both:
+FastAPI, Flask, Sanic and Starlette are recognised by name, and anything that registers
+routes the way they do is read as well. A module qualifies either by importing a known
+framework or by showing the idiom: a function decorated with an HTTP verb carrying a
+URL-shaped literal. An import allow-list on its own only ever recognises the frameworks
+somebody has already added to it and returns nothing at all for the rest, which is how a
+gateway with 1190 endpoints behind a house framework indexed as a service with no API.
+
+Registration styles, because real services use all of them:
 
   * decorators    `@router.get("/path")`, `@bp.route("/path", methods=[...])`
+  * bare verbs    `@get("/path")`, `@post(path="/path")`, where the framework exports its
+                  verbs as module-level functions rather than methods on an app object
+  * keyword path  `@app.get(path="/path")`, which FastAPI and Flask both accept
   * imperative    `bp.add_route(handler, "/path")`, `app.add_url_rule("/path", ...)`,
                   `router.add_api_route("/path", handler, methods=[...])`
+
+A bare verb is a weaker signal than an attribute, since `get` and `post` are ordinary
+function names: it counts once the module has shown the idiom somewhere unambiguous.
 
 Prefixes declared on the router or blueprint in the same module are composed in, including
 Sanic's `version=4`, which contributes a `/v4` segment rather than a literal prefix.
@@ -35,6 +48,10 @@ _ROUTE_ATTRS = {"route", "api_route"}
 #: Flask's `add_url_rule`, FastAPI/Starlette's `add_api_route` and `add_route`. These take
 #: the handler first and the path second, which is why the decorator walk never saw them.
 _ADD_ROUTE_ATTRS = {"add_route", "add_url_rule", "add_api_route", "add_websocket_route"}
+#: Keywords a framework uses for the route path when it is not passed positionally.
+#: FastAPI and Flask accept both forms for the same call, so this is not an exotic spelling:
+#: `@app.get(path="/x")` is ordinary FastAPI that a positional-only reader misses.
+_PATH_KWARGS = {"path", "rule", "uri", "url", "route"}
 _FRAMEWORKS = {"fastapi": "fastapi", "flask": "flask", "sanic": "sanic",
                "starlette": "starlette"}
 _SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
@@ -49,6 +66,24 @@ def _str(node):
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     return None
+
+
+def _path_nodes(call: ast.Call):
+    """Argument nodes that could carry the route path, most likely first.
+
+    Positional arguments come first because every framework accepts the path there, then
+    the keywords frameworks name it with. Callers take the first one that is a string
+    literal; the first one of any kind is what gets reported when none of them is.
+    """
+    yield from call.args
+    for kw in call.keywords:
+        if kw.arg in _PATH_KWARGS:
+            yield kw.value
+
+
+def _literal_path(call: ast.Call):
+    """The node holding the route's path as a string literal, or None."""
+    return next((n for n in _path_nodes(call) if _str(n) is not None), None)
 
 
 def _prefixes(tree: ast.Module) -> dict:
@@ -79,9 +114,14 @@ def _prefixes(tree: ast.Module) -> dict:
     return out
 
 
-#: A string that denotes a URL path rather than a filesystem path or a separator. Requires
-#: a named segment, so "/" and "/d/" (arguments to str.split) do not qualify.
-_PATH_LIKE = re.compile(r"^/[\w\-.{}<>:*]+[\w\-./{}<>:*]*$")
+#: A string that denotes a URL path. Requires a leading slash and a named first segment,
+#: so a bare "/" does not qualify. A one-letter separator like "/d/" does, which is why
+#: _NOT_REGISTRATION_ATTRS below carries the weight of rejecting arguments to str.split.
+#:
+#: The tail admits regex metacharacters because route parameters are frequently typed with
+#: one: Sanic and Starlette write `{sku_id:\d+}`, Flask writes `<regex("[0-9]+"):x>`. A
+#: class that stopped at word characters read those as not-a-path and dropped the route.
+_PATH_LIKE = re.compile(r"^/[\w\-.{}<>:*]+[\w\-./{}<>:*\\+()\[\]|^$?!,'\"]*$")
 #: Methods that take a path-shaped string without registering anything. String handling
 #: dominates: every false positive in the first run of this detector was a separator passed
 #: to split, strip or join.
@@ -197,6 +237,68 @@ def _methods_kwarg(call: ast.Call):
     return None
 
 
+def _dec_name(dec: ast.Call) -> str:
+    """The name a decorator was called by: `post` for `@post(...)` and for `@app.post(...)`.
+
+    Both spellings are in use. A framework that exposes its verbs as module-level functions
+    is decorated with a bare name, one that hangs them off an app or router object with an
+    attribute, and the registration means the same thing either way.
+    """
+    if isinstance(dec.func, ast.Attribute):
+        return dec.func.attr
+    if isinstance(dec.func, ast.Name):
+        return dec.func.id
+    return ""
+
+
+def _bare_verb_routes(tree: ast.Module) -> bool:
+    """Whether this module decorates functions with bare verb names carrying URL literals.
+
+    `@post("/x")` and `@post(path="/x")` are route registrations; `@post(data=payload)` on
+    some unrelated helper is not, and the name alone cannot tell them apart. One decorator
+    in the module that is unambiguous settles it for the rest, which is what lets a sibling
+    route whose path is computed be recorded as unresolved instead of vanishing.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Name)):
+                continue
+            if dec.func.id.lower() not in _VERBS and dec.func.id not in _ROUTE_ATTRS:
+                continue
+            n = _literal_path(dec)
+            if n is not None and looks_like_a_path(_str(n)):
+                return True
+    return False
+
+
+def _has_route_idiom(tree: ast.Module) -> bool:
+    """Whether this module registers routes, judged by what it does rather than what it
+    imports.
+
+    An import allow-list only ever recognises the frameworks someone has already added to
+    it, and silently returns nothing for the rest: no interfaces, and not even an unresolved
+    count, because the file is never examined. House frameworks and smaller libraries are
+    the common case for that, and the failure is invisible to the person indexing.
+
+    A decorated function whose decorator is named after an HTTP verb and carries a
+    URL-shaped literal is the idiom itself, which is what is worth matching.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for dec in node.decorator_list:
+            if not isinstance(dec, ast.Call):
+                continue
+            if _dec_name(dec).lower() not in _VERBS and _dec_name(dec) not in _ROUTE_ATTRS:
+                continue
+            n = _literal_path(dec)
+            if n is not None and looks_like_a_path(_str(n)):
+                return True
+    return False
+
+
 def _framework_of(tree: ast.Module) -> str | None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -214,6 +316,7 @@ def _framework_of(tree: ast.Module) -> str | None:
 def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
                skipped: list[SkippedSite] | None = None) -> list[Interface]:
     prefixes = _prefixes(tree)
+    bare_ok = _bare_verb_routes(tree)
     lines = src.splitlines()
     out = []
     claimed: set = set()
@@ -229,24 +332,38 @@ def _routes_in(tree: ast.Module, rel: str, framework: str | None, src: str = "",
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for dec in node.decorator_list:
-            if not (isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute) and dec.args):
+            if not isinstance(dec, ast.Call):
                 continue
-            attr = dec.func.attr
+            attr = _dec_name(dec)
+            bare = isinstance(dec.func, ast.Name)
+            if attr.lower() in _VERBS:
+                attr = attr.lower()
             if attr not in _VERBS and attr not in _ROUTE_ATTRS:
                 continue
+            # A bare `@post(...)` is a weaker signal than `@router.post(...)`: the name
+            # alone does not say a framework is involved. It counts once the module has
+            # shown the idiom somewhere unambiguous, so a sibling route with a computed
+            # path is still recorded rather than dropped.
+            if bare and not bare_ok:
+                continue
+            node_ = _literal_path(dec)
             claimed.add(dec.lineno)
-            path = _str(dec.args[0])
-            if path is None:
+            if node_ is None:
                 if skipped is not None:
                     literal = [attr.upper()] if attr in _VERBS else _methods_kwarg(dec)
+                    report = next(iter(_path_nodes(dec)), None)
                     skipped.append(SkippedSite(
                         kind="interface", reason="non-literal-path", file=rel, line=dec.lineno,
-                        expr=ast.get_source_segment(src, dec.args[0]) or "",
+                        expr=(report is not None
+                              and ast.get_source_segment(src, report) or ""),
                         snippet=snippet_of(lines, dec.lineno, node.lineno),
                         names=names_in(dec),
                         method=literal[0] if literal and len(literal) == 1 else None))
                 continue
-            prefix = prefixes.get(dec.func.value.id, "") if isinstance(dec.func.value, ast.Name) else ""
+            path = _str(node_)
+            prefix = ("" if bare else
+                      prefixes.get(dec.func.value.id, "")
+                      if isinstance(dec.func.value, ast.Name) else "")
             full = (prefix + path) if prefix else path
             if attr in _VERBS:
                 methods = [attr.upper()]
@@ -269,7 +386,7 @@ class PythonWebAdapter(InterfaceAdapter):
     def applies(self, repo: Path) -> bool:
         for p in _iter_py(repo):
             _, tree = read_and_parse(p)
-            if tree is not None and _framework_of(tree):
+            if tree is not None and (_framework_of(tree) or _has_route_idiom(tree)):
                 return True
         return False
 
@@ -281,7 +398,11 @@ class PythonWebAdapter(InterfaceAdapter):
             if tree is None:
                 continue
             fw = _framework_of(tree)
-            if fw is None:
+            # A module with no recognised framework import is still read when it registers
+            # routes the way frameworks do. Without this the file is never opened, so a
+            # house framework yields no interfaces and no unresolved count either, which
+            # reads as a service with no API rather than as a gap.
+            if fw is None and not _has_route_idiom(tree):
                 continue
             out += _routes_in(tree, p.relative_to(repo).as_posix(), fw, src, skipped)
         return out

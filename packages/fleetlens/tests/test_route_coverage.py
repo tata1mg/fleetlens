@@ -128,3 +128,95 @@ bp.add_route(h, SOME_CONSTANT, methods=["POST"])
 ''')
     assert found == []
     assert [s.reason for s in skipped] == ["non-literal-path"]
+
+
+# --- registration the import allow-list could not see --------------------------------
+
+def test_a_framework_we_have_never_heard_of_is_still_read(tmp_path):
+    """A real gateway exposed 1190 endpoints and fleetlens reported none.
+
+    The adapter admitted a file only when it imported fastapi, flask, sanic or starlette.
+    This one imports an in-house framework, so the file was never opened: no interfaces,
+    and no unresolved count either, which reads as a service with no API rather than as a
+    gap. What a module *does* is the durable signal, not which package it imports.
+    """
+    found, skipped = _found(tmp_path, '''
+from company_internal_framework import BaseRequestHandler, get, post, Request
+
+class OrderHandler(BaseRequestHandler):
+    @post(path="/v4/orders")
+    async def create(self, request): ...
+
+    @get(path="/v4/orders/{order_id}")
+    async def fetch(self, request): ...
+''')
+    assert {f.name for f in found} == {"POST /v4/orders", "GET /v4/orders/{order_id}"}
+    assert [f.handler for f in found if f.method == "POST"] == ["create"]
+    assert skipped == []
+
+
+def test_the_path_can_be_a_keyword_argument(tmp_path):
+    """`@app.get(path="/x")` is ordinary FastAPI, and reading only `args[0]` missed it."""
+    found, _ = _found(tmp_path, '''
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/v1")
+
+@router.get(path="/items")
+async def items(): ...
+
+@router.post("/items")
+async def create(): ...
+''')
+    assert {f.name for f in found} == {"GET /v1/items", "POST /v1/items"}
+
+
+def test_a_typed_path_parameter_is_still_a_path(tmp_path):
+    """Sanic and Starlette write `{id:\\d+}`, Flask writes `<regex(...)>`. A path pattern
+    that stopped at word characters read those as not-a-path and dropped the route."""
+    assert looks_like_a_path(r"/v4/category/{udp_id:\d+}")
+    assert looks_like_a_path('/x/<regex("[0-9]+"):y>')
+    assert not looks_like_a_path("/")
+    assert not looks_like_a_path("not a path")
+
+    found, _ = _found(tmp_path, '''
+from company_internal_framework import get
+
+@get(path="/v4/category/{udp_id:\\\\d+}")
+async def category(request): ...
+''')
+    assert [f.name for f in found] == [r"GET /v4/category/{udp_id:\d+}"]
+
+
+def test_a_bare_decorator_is_not_a_route_just_because_of_its_name(tmp_path):
+    """`get` and `post` are ordinary function names. Without a module that demonstrably
+    registers routes this way, a decorator called `post` is just a decorator."""
+    found, skipped = _found(tmp_path, '''
+from celery import task
+
+@task(path="computed")
+def post(payload): ...
+
+@task
+def get(key): ...
+''')
+    assert found == []
+    assert [s for s in skipped if s.kind == "interface" and s.reason == "non-literal-path"] == []
+
+
+def test_a_computed_path_beside_a_literal_one_is_recorded_not_dropped(tmp_path):
+    """Once a module has shown the idiom unambiguously, a sibling route whose path is
+    built at import time is a route fleetlens could not read, which is the thing the
+    unresolved count exists to report."""
+    found, skipped = _found(tmp_path, '''
+from company_internal_framework import get
+PREFIX = "/v4"
+
+@get(path="/v4/health")
+async def health(request): ...
+
+@get(path=PREFIX + "/orders")
+async def orders(request): ...
+''')
+    assert [f.name for f in found] == ["GET /v4/health"]
+    assert [(s.reason, s.method) for s in skipped] == [("non-literal-path", "GET")]
