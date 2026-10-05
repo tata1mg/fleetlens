@@ -12,6 +12,7 @@ a path-like argument). Everything the resolver produces is confidence-tagged.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,6 +28,22 @@ _CLIENT_HINTS = ("http", "client", "session", "request", "api")
 # INBOUND request and never perform I/O.
 _PARAM_ACCESSORS = ("args", "form", "query", "query_args", "params", "json", "headers",
                     "cookies", "match_info", "files")
+# Receivers that answer `.get`/`.post`/`.delete` without making a request. `await` was being
+# read as evidence of HTTP, which it is not in an async codebase: `await cache.get(key)`,
+# `await queue.put(msg)` and `await Model.all().delete()` are all awaited and none of them
+# leave the process. On one fleet that misread 383 calls, and each one whose argument was
+# not a literal became an unresolved site that the LLM tier was then asked to invent a URL
+# for. The interface adapter has had this list for a while; the outbound one never did.
+_NOT_A_CLIENT = frozenset((
+    "cache", "caches", "redis", "memcache", "memcached", "queue", "queues", "kafka", "sqs",
+    "pubsub", "broker", "bucket", "s3", "storage", "mongo", "collection", "cursor",
+    "db", "database", "conn", "connection", "pool", "lock", "repo", "repository", "store",
+    "objects", "queryset", "orm", "session_factory"))
+#: An explicit HTTP marker outranks the words above: a cache that warms itself over HTTP is
+#: still making requests.
+_STRONG_HTTP = ("http", "api", "rest", "graphql", "webhook", "endpoint")
+#: A receiver that is itself a queryset call. `await Model.all().delete()` is an ORM write.
+_ORM_CHAIN = (".all()", ".filter(", ".exclude(", ".objects", ".query(", ".select(")
 _SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
          "vendor", ".context", "tests", "test"}
 
@@ -95,18 +112,47 @@ def _is_path_like(s: str) -> bool:
     return s.startswith("/") or s.startswith("http://") or s.startswith("https://")
 
 
+def _not_a_client(recv: str) -> bool:
+    """Whether the receiver is something that answers `.get` without making a request.
+
+    Three rules, in order. A name carrying an explicit HTTP marker is believed first, so
+    `CacheWarmingHttpClient` stays a client despite the word "cache". A receiver that is
+    itself a queryset call is an ORM, which is how `await Corporates.all().delete()` was
+    being read as a DELETE request. Otherwise the name is split on camel case and
+    underscores and checked word by word, so `RedisCache` and `redis_client` are both
+    rejected while `dbx_api_client` is not, and `db` only matches as a whole word.
+    """
+    low = recv.lower()
+    if any(h in low for h in _STRONG_HTTP):
+        return False
+    if any(marker in low for marker in _ORM_CHAIN):
+        return True
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", recv)
+    words = {w.lower() for w in re.split(r"[^A-Za-z0-9]+", spaced) if w}
+    if words & _NOT_A_CLIENT:
+        return True
+    return False
+
+
 def _looks_http(call: ast.Call, awaited: bool) -> bool:
-    """Bound the noise: a `.get(x)` on a dict is not a request. Treat it as HTTP only when
-    it's awaited, carries request-style kwargs, or the receiver is named like a client."""
+    """Bound the noise: a `.get(x)` on a dict is not a request.
+
+    Treated as HTTP when it carries request-style keyword arguments, when the receiver is
+    named like a client, or when it is awaited and the receiver is not something that
+    plainly answers `.get` locally. Awaiting is weak evidence on its own: in an async
+    service most things are awaited, including every cache read and every ORM write.
+    """
     recv = ast.unparse(call.func.value)
     parts = [p.strip("()") for p in recv.split(".")]
     # only `<something request-ish>.<accessor>` — never a bare `session`/`client`
     if (len(parts) >= 2 and parts[-1] in _PARAM_ACCESSORS
             and any(p.lower() in ("request", "req") for p in parts[:-1])):
         return False        # reading the inbound request, not making an outbound one
-    if awaited or any(kw.arg in _HTTP_KWARGS for kw in call.keywords):
+    if any(kw.arg in _HTTP_KWARGS for kw in call.keywords):
         return True
-    return any(h in recv.lower() for h in _CLIENT_HINTS)
+    if any(h in recv.lower() for h in _CLIENT_HINTS):
+        return True
+    return awaited and not _not_a_client(recv)
 
 
 def _calls_in(func: ast.AST, rel: str, src: str = "",
