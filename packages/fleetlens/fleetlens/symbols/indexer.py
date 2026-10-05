@@ -20,9 +20,9 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, Optional
 
 from ..adapters._walk import iter_files
-from typing import Iterable, Optional
 
 # ext -> Tree-sitter language name (as understood by tree_sitter_language_pack).
 _LANG_BY_EXT = {

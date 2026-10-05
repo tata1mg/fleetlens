@@ -111,7 +111,8 @@ def test_index_info_is_computed_once_on_a_served_index(tmp_path):
         object_type="service", object_id="orders", name="orders", summary=None,
         version="unknown", source="static", generation_strategy="index",
         last_generated_at=None, embed_text=None, payload={}))
-    w.commit(); w.close()
+    w.commit()
+    w.close()
 
     r = SqliteStore(str(db), read_only=True)
     first = r.index_info()
@@ -149,7 +150,8 @@ def test_a_served_store_can_be_read_from_several_threads(tmp_path):
             object_type="service", object_id=f"s{n}", name=f"s{n}", summary=None,
             version="unknown", source="static", generation_strategy="index",
             last_generated_at=None, embed_text=None, payload={"interface_count": n}))
-    w.commit(); w.close()
+    w.commit()
+    w.close()
 
     r = SqliteStore(str(db), read_only=True)
     seen, errors = [], []
@@ -161,8 +163,10 @@ def test_a_served_store_can_be_read_from_several_threads(tmp_path):
             errors.append(exc)
 
     threads = [threading.Thread(target=read) for _ in range(8)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
     assert errors == []
     assert seen == [5] * 8
