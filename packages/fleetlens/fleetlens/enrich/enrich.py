@@ -169,8 +169,20 @@ def _embed_text(obj, kind: str, summary: str, vocab: str = "") -> str:
 BATCH = int(os.environ.get("FLEETLENS_ENRICH_BATCH", "5"))
 
 
+def _owned_by(obj, kind: str, slug: str) -> bool:
+    """Whether `obj` belongs to the service `slug`.
+
+    An interface id is `interface:<slug>:<rest>`; a service's own id is its slug.
+    """
+    if kind == "service":
+        return obj.object_id == slug
+    parts = obj.id.split(":")
+    return len(parts) > 1 and parts[1] == slug
+
+
 def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
-           kinds: tuple[str, ...] = ("interface", "service"), progress=None) -> dict:
+           kinds: tuple[str, ...] = ("interface", "service"), only_slug: str = "",
+           progress=None) -> dict:
     """Enrich the given object kinds. `store` implements KnowledgeStore + SemanticStore.
 
     Work is committed in batches rather than at the end. On a fleet this runs for hours:
@@ -211,6 +223,11 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
     for kind in kinds:
         existing = semantic.enrichment_hashes(kind, model)
         objs = knowledge.list_objects(kind)
+        # Narrowing to one service is what makes iterating on a prompt affordable: a change
+        # to the wording alters every content hash, so without this each experiment costs a
+        # summary for every object in the fleet.
+        if only_slug:
+            objs = [o for o in objs if _owned_by(o, kind, only_slug)]
         todo = len(objs)
         batch: list = []            # (obj, summary, content_hash)
         try:

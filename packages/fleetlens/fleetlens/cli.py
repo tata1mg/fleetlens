@@ -376,7 +376,8 @@ def _cmd_enrich(args) -> int:
         if summary_kinds:
             eprog = _enrich_printer()
             try:
-                r = enrich(store, llm, embedder, kinds=summary_kinds, progress=eprog)
+                r = enrich(store, llm, embedder, kinds=summary_kinds,
+                           only_slug=args.service or "", progress=eprog)
             except ProviderError as exc:
                 # Hours of work may already be committed. A traceback buries both what was
                 # achieved and what to do about it.
@@ -525,7 +526,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kinds", default="interface,service",
                    help="comma list of: interface, service (summaries+embeddings), "
                         "gaps (LLM-resolve sites the parsers could not; grounded, no embeddings)")
-    p.add_argument("--service", default="", help="with gaps: limit to one service slug")
+    p.add_argument("--service", default="",
+                   help="limit to one service slug, for every kind")
     p.set_defaults(func=_cmd_enrich)
 
     p = sub.add_parser("doctor", help="check this machine can index, and that a repo can be")
