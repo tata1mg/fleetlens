@@ -1,0 +1,27 @@
+packages/fleetlens/tests/test_enrich.py
+  s_d5ea2fae8a9c21::t_c3e132af5ac3f1 295-338,340-370,372-380
+  s_d5ea2fae8a9c21::t_195095913497de 339,371
+packages/fleetlens/fleetlens/enrich/enrich.py
+  s_d5ea2fae8a9c21::t_cf399afc77cf61 15,205,254-263,279-322
+  s_d5ea2fae8a9c21::t_be10770dd539f4 173-183
+  s_d5ea2fae8a9c21::t_221ee55fe5baf1 241-243
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_3b1e4823ba6a85 380-381
+  s_d5ea2fae8a9c21::t_be90a6e75a4940 532-535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15db79e3ecb768cc162b127b08ec0b654b250cd4",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
