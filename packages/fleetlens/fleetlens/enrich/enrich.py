@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from ..store.base import KnowledgeStore, SemanticStore
 from .providers import EmbeddingProvider, LLMProvider
@@ -169,6 +170,17 @@ def _embed_text(obj, kind: str, summary: str, vocab: str = "") -> str:
     return " ".join(p for p in (x.strip() for x in parts) if p)[:EMBED_CHARS]
 
 
+def _summarise(llm: LLMProvider, kind: str, prompt: str) -> str:
+    """One summary. Pure with respect to the store, so it is safe to run on a worker."""
+    system = _IFACE_SYS if kind == "interface" else _SVC_SYS
+    summary = llm.complete(prompt, system=system, max_tokens=TOKENS.get(kind, 48)).strip()
+    # An endpoint answer is one line; a service answer is prose and may run to several, so
+    # only the first line is kept where that is the shape asked for.
+    if kind == "interface":
+        summary = summary.split("\n")[0]
+    return _whole_sentences(summary, CHARS.get(kind, 300))
+
+
 #: Objects per batch. Each batch is one embedding request and one commit, so this trades
 #: request overhead against how much work a crash can cost. Small: on a local model a
 #: summary takes seconds, so 5 keeps the loss window under half a minute on a run that
@@ -190,7 +202,7 @@ def _owned_by(obj, kind: str, slug: str) -> bool:
 
 def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
            kinds: tuple[str, ...] = ("interface", "service"), only_slug: str = "",
-           progress=None) -> dict:
+           progress=None, jobs: int = 1) -> dict:
     """Enrich the given object kinds. `store` implements KnowledgeStore + SemanticStore.
 
     Work is committed in batches rather than at the end. On a fleet this runs for hours:
@@ -226,7 +238,9 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
         for (obj, summary, chash, _v), vec in zip(batch, vectors):
             semantic.upsert_enrichment(obj.id, kind, model, len(vec), summary, chash, vec)
         store.commit()
-        return len(batch)
+        n = len(batch)
+        batch.clear()
+        return n
 
     for kind in kinds:
         existing = semantic.enrichment_hashes(kind, model)
@@ -237,8 +251,16 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
         if only_slug:
             objs = [o for o in objs if _owned_by(o, kind, only_slug)]
         todo = len(objs)
-        batch: list = []            # (obj, summary, content_hash)
-        try:
+        batch: list = []            # (obj, summary, content_hash, vocab)
+
+        def ready(kind=kind, objs=objs, existing=existing, todo=todo, batch=batch):
+            """(obj, prompt, hash, vocab) for each object that still needs a summary.
+
+            Grounding stays on the calling thread even when the summaries do not: a
+            service's prompt is built by reading its interfaces back out of the store, and
+            the store is one connection.
+            """
+            nonlocal skipped
             for n, obj in enumerate(objs, 1):
                 prompt, chash, vocab = (_iface_ground(obj) if kind == "interface"
                                         else _svc_ground(obj, knowledge, semantic))
@@ -254,18 +276,50 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
                 say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
                                "pending": len(batch), "skipped": skipped,
                                "id": obj.id, "state": "summarising"})
-                system = _IFACE_SYS if kind == "interface" else _SVC_SYS
-                summary = llm.complete(prompt, system=system,
-                                       max_tokens=TOKENS.get(kind, 48)).strip()
-                # An endpoint answer is one line; a service answer is prose and may run to
-                # several, so only the first line is kept where that is the shape asked for.
-                if kind == "interface":
-                    summary = summary.split("\n")[0]
-                summary = _whole_sentences(summary, CHARS.get(kind, 300))
-                batch.append((obj, summary, chash, vocab))
-                if len(batch) >= BATCH:
-                    generated += flush(kind, batch)
-                    batch = []
+                yield obj, prompt, chash, vocab
+
+        try:
+            if jobs <= 1:
+                for obj, prompt, chash, vocab in ready():
+                    batch.append((obj, _summarise(llm, kind, prompt), chash, vocab))
+                    if len(batch) >= BATCH:
+                        generated += flush(kind, batch)
+            else:
+                # A remote provider is latency-bound, not compute-bound: the sequential
+                # path above spends most of a run waiting on a round trip, and from outside
+                # the provider's region that round trip is most of the time per object.
+                # Keeping several requests in flight turns that wait into throughput. A
+                # local model is the opposite case, where one request already saturates the
+                # hardware and a second only splits it, which is why this is off by default.
+                work = ready()
+                inflight: dict = {}
+                with ThreadPoolExecutor(max_workers=jobs) as pool:
+                    drained = False
+                    while inflight or not drained:
+                        # Submit at most twice the worker count. Unbounded submission would
+                        # ground every object in the fleet up front and hold the results in
+                        # memory, and would leave nothing to cancel if the provider starts
+                        # refusing.
+                        while not drained and len(inflight) < jobs * 2:
+                            nxt = next(work, None)
+                            if nxt is None:
+                                drained = True
+                                break
+                            obj, prompt, chash, vocab = nxt
+                            fut = pool.submit(_summarise, llm, kind, prompt)
+                            inflight[fut] = (obj, chash, vocab)
+                        if not inflight:
+                            break
+                        # Completion order, not submission order. Nothing downstream
+                        # depends on the order within a kind: every row is keyed by object
+                        # id, and the kinds themselves still run in sequence, which is what
+                        # services need since their prompts read interface summaries.
+                        done, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                        for fut in done:
+                            obj, chash, vocab = inflight.pop(fut)
+                            batch.append((obj, fut.result(), chash, vocab))
+                            if len(batch) >= BATCH:
+                                generated += flush(kind, batch)
             generated += flush(kind, batch)
         except Exception:
             # Keep what has already been paid for. Each summary in the part-filled batch

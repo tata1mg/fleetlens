@@ -292,3 +292,89 @@ def test_a_4xx_is_not_retried_but_a_5xx_is(monkeypatch):
         with pytest.raises(providers.ProviderError):
             providers._post("http://x", {})
         assert tries["n"] == expected, code
+
+
+# --- concurrent summarising (--jobs) ------------------------------------------------
+
+
+class SlowLLM(FakeLLM):
+    """Records how many calls are in flight at once, so overlap can be asserted on."""
+
+    def __init__(self, delay=0.05):
+        super().__init__()
+        self.delay = delay
+        self.live = 0
+        self.peak = 0
+        self._lock = __import__("threading").Lock()
+
+    def complete(self, prompt, *, system=None, max_tokens=64):
+        import time
+        with self._lock:
+            self.live += 1
+            self.peak = max(self.peak, self.live)
+        try:
+            time.sleep(self.delay)
+            return super().complete(prompt, system=system, max_tokens=max_tokens)
+        finally:
+            with self._lock:
+                self.live -= 1
+
+
+def _many_ifaces(n=12):
+    s = SqliteStore(":memory:")
+    for i in range(n):
+        s.upsert_object(_iface("shop", f"get-{i}", "GET", f"/orders/{i}"))
+    s.upsert_object(KnowledgeObject("service", "shop", "shop", None, "unknown", "static",
+                                    "index", None, None, {}))
+    s.commit()
+    return s
+
+
+def test_jobs_above_one_produces_the_same_enrichments():
+    """Concurrency is a scheduling change, not a result change."""
+    out = []
+    for jobs in (1, 4):
+        store = _many_ifaces()
+        enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=jobs)
+        rows = store._conn.execute(
+            "SELECT object_id, summary, content_hash FROM enrichments ORDER BY object_id"
+        ).fetchall()
+        out.append([tuple(r) for r in rows])
+    assert out[0] == out[1]
+    assert len(out[0]) == 12
+
+
+def test_jobs_above_one_actually_overlaps_requests():
+    llm = SlowLLM()
+    enrich(_many_ifaces(), llm, FakeEmbedder(), kinds=("interface",), jobs=4)
+    assert llm.peak > 1, "requests were serialised despite jobs=4"
+    assert llm.calls == 12
+
+
+def test_jobs_of_one_stays_sequential():
+    llm = SlowLLM()
+    enrich(_many_ifaces(), llm, FakeEmbedder(), kinds=("interface",), jobs=1)
+    assert llm.peak == 1
+
+
+def test_concurrent_failure_keeps_what_was_already_paid_for():
+    """A provider that dies mid-run must not throw away committed summaries."""
+    class Dies(FakeLLM):
+        def complete(self, prompt, *, system=None, max_tokens=64):
+            if self.calls >= 8:
+                raise RuntimeError("provider gave up")
+            return super().complete(prompt, system=system, max_tokens=max_tokens)
+
+    store = _many_ifaces()
+    with pytest.raises(RuntimeError):
+        enrich(store, Dies(), FakeEmbedder(), kinds=("interface",), jobs=4)
+    kept = store._conn.execute("SELECT count(*) FROM enrichments").fetchone()[0]
+    assert kept > 0
+
+
+def test_concurrent_run_still_skips_unchanged_objects():
+    store = _many_ifaces()
+    first = enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=4)
+    second = enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=4)
+    assert first["generated"] == 12 and first["skipped"] == 0
+    assert second["generated"] == 0 and second["skipped"] == 12
