@@ -219,7 +219,7 @@ def test_service_grounding_does_not_scan_every_interface_in_the_fleet():
         return real(kind, *a, **kw)
 
     store.list_objects = counted
-    prompt, _ = _svc_ground(store.get("service:orders"), store)
+    prompt, _, _vocab = _svc_ground(store.get("service:orders"), store)
 
     assert scans["n"] == 0                      # no full scan at all
     assert "/orders/0" in prompt                # and it still found this service's paths
