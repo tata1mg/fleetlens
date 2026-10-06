@@ -378,3 +378,63 @@ def test_concurrent_run_still_skips_unchanged_objects():
     second = enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=4)
     assert first["generated"] == 12 and first["skipped"] == 0
     assert second["generated"] == 0 and second["skipped"] == 12
+
+
+# --- rate limiting ------------------------------------------------------------------
+
+
+def _http_error(code, headers=None):
+    import io
+    import urllib.error
+    return urllib.error.HTTPError("http://x/api", code, "nope", headers or {},
+                                  io.BytesIO(b'{"error":"slow down"}'))
+
+
+def test_rate_limit_is_retried(monkeypatch):
+    """429 means the request was fine and arrived too soon, so it is worth repeating."""
+    from fleetlens.enrich import providers
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _http_error(429, {"Retry-After": "0"})
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"response":"ok"}'
+        return R()
+
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+    assert providers._post("http://x/api", {})["response"] == "ok"
+    assert calls["n"] == 2
+
+
+def test_other_client_errors_are_not_retried(monkeypatch):
+    from fleetlens.enrich import providers
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise _http_error(401)
+
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+    with pytest.raises(providers.ProviderError):
+        providers._post("http://x/api", {})
+    assert calls["n"] == 1
+
+
+def test_persistent_rate_limit_says_what_to_do(monkeypatch):
+    from fleetlens.enrich import providers
+
+    def fake_urlopen(req, timeout=None):
+        raise _http_error(429)
+
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+    with pytest.raises(providers.ProviderError, match="Lower --jobs"):
+        providers._post("http://x/api", {})

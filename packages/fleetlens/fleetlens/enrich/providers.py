@@ -66,11 +66,25 @@ def _post(url: str, payload: dict, headers: Optional[dict] = None,
             except Exception:  # noqa: BLE001
                 detail = ""
             # 5xx can be transient: a model runner that died is restarted on the next
-            # request. 4xx will not improve by asking again.
-            if exc.code >= 500 and attempt < ATTEMPTS:
-                time.sleep(2 * attempt)
+            # request. 429 is the other retryable case and the only 4xx that is: it means
+            # the request was fine and arrived too soon, which is precisely what --jobs
+            # produces against a remote provider. Everything else will not improve by
+            # asking again. Retry-After is the provider telling us how long to wait, so
+            # prefer it over our own guess.
+            if (exc.code >= 500 or exc.code == 429) and attempt < ATTEMPTS:
+                delay = 2 * attempt
+                after = (exc.headers or {}).get("Retry-After")
+                if after:
+                    try:
+                        delay = max(delay, min(float(after), 60))
+                    except ValueError:      # a date rather than seconds; our guess stands
+                        pass
+                time.sleep(delay)
                 continue
             hint = ""
+            if exc.code == 429:
+                hint = ("\n  Rate limited after every attempt. Lower --jobs, or raise\n"
+                        "  FLEETLENS_LLM_ATTEMPTS to wait the provider out.")
             if exc.code >= 500 and ("memory" in detail.lower() or "killed" in detail.lower()):
                 hint = ("\n  The model runner was killed, which on a shared box means it ran\n"
                         "  out of memory. Use a smaller model, or free memory on the host.")
