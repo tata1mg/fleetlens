@@ -438,3 +438,89 @@ def test_persistent_rate_limit_says_what_to_do(monkeypatch):
     monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
     with pytest.raises(providers.ProviderError, match="Lower --jobs"):
         providers._post("http://x/api", {})
+
+
+# --- service grounding beyond endpoints ----------------------------------------------
+
+
+def _svc(slug, root=""):
+    return KnowledgeObject("service", slug, slug, None, "unknown", "static", "index",
+                           None, None, {"root": root})
+
+
+def _symbol(slug, path, qualname, kind="function"):
+    return KnowledgeObject("code_symbol", f"{slug}:{path}::{qualname}", qualname, None,
+                           "unknown", "static", "symbols", None, None,
+                           {"path": path, "qualname": qualname, "kind": kind})
+
+
+def test_a_service_with_no_endpoints_is_grounded_in_its_exported_code():
+    """A library has no routes. Describing it from its slug would be invention."""
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = SqliteStore(":memory:")
+    s.upsert_object(_svc("retrylib"))
+    for name in ("CircuitBreaker", "retry_with_backoff", "_private_helper"):
+        s.upsert_object(_symbol("retrylib", "retrylib/resilience.py", name))
+    s.commit()
+    prompt, _, vocab = _svc_ground(s.get("service:retrylib"), s, s)
+    assert "public surface is the code it exports" in prompt
+    assert "CircuitBreaker" in prompt and "retry_with_backoff" in prompt
+    assert "(none discovered)" not in prompt
+    assert "retrylib" in vocab
+    # Private symbols rank last, so a budget that fits everything still shows them after.
+    assert prompt.index("CircuitBreaker") < prompt.index("_private_helper")
+
+
+def test_endpoints_still_win_when_a_service_has_them():
+    """The symbol fallback is a fallback, not an addition."""
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = _store_with_ifaces()
+    s.upsert_object(_symbol("shop", "shop/util.py", "helper"))
+    s.commit()
+    prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "Endpoints it exposes:" in prompt
+    assert "public surface is the code it exports" not in prompt
+
+
+def test_readme_is_included_and_changes_the_content_hash(tmp_path):
+    from fleetlens.enrich.enrich import _svc_ground
+
+    (tmp_path / "README.md").write_text("# Shop\n\nOwns the pharmacy order ledger.\n")
+    s = _store_with_ifaces()
+    s.upsert_object(_svc("shop", str(tmp_path)))
+    s.commit()
+    prompt, h1, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "pharmacy order ledger" in prompt
+    assert "Declared purpose" in prompt
+
+    (tmp_path / "README.md").write_text("# Shop\n\nOwns the loyalty points ledger.\n")
+    _, h2, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert h2 != h1, "editing a README must re-summarise that service"
+
+
+def test_grounding_survives_a_root_that_is_not_there():
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = _store_with_ifaces()
+    s.upsert_object(_svc("shop", "/definitely/not/here"))
+    s.commit()
+    prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "Declared purpose" not in prompt
+    assert "Endpoints it exposes:" in prompt
+
+
+def test_dependents_are_named():
+    from fleetlens.enrich.enrich import _svc_ground
+    from fleetlens.store.models import Relationship
+
+    s = _store_with_ifaces()
+    s.upsert_object(_svc("checkout"))
+    s.commit()
+    s.replace_edges("resolver", ["service:checkout"],
+                    [Relationship("service:checkout", "calls", "service:shop",
+                                  "resolver", {})])
+    s.commit()
+    prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "Depended on by: checkout" in prompt
