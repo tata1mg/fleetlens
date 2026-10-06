@@ -38,6 +38,14 @@ CHARS = {k: v * 6 for k, v in TOKENS.items()}
 #: How many endpoints to describe to the service summariser. The old limit of twelve was
 #: the reason a service's summary covered only part of it.
 SVC_ENDPOINTS = int(os.environ.get("FLEETLENS_SUMMARY_ENDPOINTS", "60"))
+#: How many endpoint paths ride along in the embedded text, and how long that text may be.
+#:
+#: Embedding cost rises with sequence length, and on a host without a GPU it rises enough
+#: to matter: 60 characters embed in 0.33s on four CPU cores where 2000 take 7.9s. Measured
+#: against one service's text, capping at 1500 characters cost about 5% of similarity on
+#: two queries and improved a third, while the tail beyond it bought almost nothing.
+EMBED_PATHS = int(os.environ.get("FLEETLENS_EMBED_PATHS", "30"))
+EMBED_CHARS = int(os.environ.get("FLEETLENS_EMBED_CHARS", "1500"))
 
 
 def _hash(*parts: str) -> str:
@@ -119,7 +127,7 @@ def _svc_ground(obj, knowledge: KnowledgeStore, semantic=None) -> tuple[str, str
     # Endpoint paths are vocabulary a summary will not fully contain, and they are what a
     # query like "payment refunds" actually matches on. Carried separately so they reach
     # the vector without being shown to a reader.
-    vocab = " ".join(i.payload.get("path", "") for i in ifaces[:80])
+    vocab = " ".join(i.payload.get("path", "") for i in ifaces[:EMBED_PATHS])
     return ("\n".join(prompt), _hash(slug, *sorted(shape), *outbound, *queues), vocab)
 
 
@@ -158,7 +166,7 @@ def _embed_text(obj, kind: str, summary: str, vocab: str = "") -> str:
                   pay.get("handler") or "", (obj.summary or "")]
     else:
         parts.append(obj.id.split(":", 1)[-1].replace("_", " "))
-    return " ".join(p for p in (x.strip() for x in parts) if p)[:4000]
+    return " ".join(p for p in (x.strip() for x in parts) if p)[:EMBED_CHARS]
 
 
 #: Objects per batch. Each batch is one embedding request and one commit, so this trades
