@@ -71,3 +71,68 @@ def test_cross_language_edge_ts_consumer_python_provider():
     from fleetlens.service.relationships import RelationshipService
     down = RelationshipService(s, s).for_object("service:web-ui")["downstream"]
     assert down[0]["id"] == "service:orders"
+
+
+def test_plain_javascript_express_routes(tmp_path):
+    """A UI server written in `.js` was never read, so it indexed with no interfaces."""
+    (tmp_path / "server").mkdir()
+    (tmp_path / "server" / "server.js").write_text('''
+const express = require("express")
+const app = express()
+app.get("/healthcheck", (req, res) => res.send("ok"))
+app.get(["/logout", "/account/logout"], logout)
+app.post(ROUTES.pay, payments)
+''')
+    (tmp_path / "server" / "auth.jsx").write_text('''
+import express from "express"
+const router = express.Router()
+router.post("/create_token", createToken)
+export default router
+''')
+    skipped: list = []
+    found = {(i.method, i.path, i.evidence[0]) for i in discover_interfaces(tmp_path, skipped)}
+    assert found == {("GET", "/healthcheck", "server/server.js:4"),
+                     ("GET", "/logout", "server/server.js:5"),
+                     ("GET", "/account/logout", "server/server.js:5"),
+                     ("POST", "/create_token", "server/auth.jsx:4")}
+    assert [(s.file, s.line, s.expr) for s in skipped] == [("server/server.js", 6, "ROUTES.pay")]
+
+
+def test_a_request_client_is_not_a_router(tmp_path):
+    """A UI codebase makes as many `api.get("/x")` requests as it declares routes. Only an
+    Express app or router's verb calls are endpoints."""
+    (tmp_path / "server.js").write_text('''
+const express = require("express")
+const app = express()
+app.get("/health", health)
+''')
+    (tmp_path / "client.js").write_text('''
+const api = axios.create({ baseURL: "/api" })
+export const load = (id) => api.get("/orders", { params: { id } })
+export const save = (body) => api.post("/orders", body)
+export const lookup = (key) => store.get("/cache/" + key, onHit)
+''')
+    skipped: list = []
+    found = {(i.method, i.path) for i in TSWebAdapter().discover(tmp_path, skipped)}
+    assert found == {("GET", "/health")}
+    assert skipped == []
+
+
+def test_routes_on_an_app_passed_in(tmp_path):
+    """`export function addRoutes(app) { ... }`: the app is created elsewhere, and is
+    recognised by what it is called with, or in TypeScript by its type."""
+    (tmp_path / "middleware.js").write_text('''
+export function addMiddlewares(app) {
+  app.use(cookieParser())
+  app.get("/login", redirectLogin)
+}
+''')
+    (tmp_path / "routes.ts").write_text('''
+import type { Express, Router } from "express"
+export default (app: Express, admin: Router) => {
+  app.post("/orders", create)
+  admin.delete("/orders/:id", remove)
+}
+''')
+    found = {(i.method, i.path) for i in TSWebAdapter().discover(tmp_path)}
+    assert found == {("GET", "/login"), ("POST", "/orders"), ("DELETE", "/orders/:id")}

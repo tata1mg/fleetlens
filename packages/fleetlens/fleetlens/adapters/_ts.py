@@ -17,6 +17,9 @@ from ._walk import COMMON_SKIP, iter_files
 _SKIP = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "dist", "build",
          ".context", "tests", "test", "__tests__"}
 _HTTP_VERBS = {"get", "post", "put", "patch", "delete", "options", "head"}
+#: Plain JavaScript. A UI server or BFF is as often `.js` as `.ts`, and reading only the
+#: latter indexed every one of them as a service with no interfaces and nothing skipped.
+JS_SUFFIXES = (".js", ".jsx", ".mjs", ".cjs")
 
 
 @dataclass
@@ -26,6 +29,7 @@ class Call:
     arg0: Optional[str]     # first string/template argument as a template ({} for interp)
     arg1_name: Optional[str]  # second arg's identifier name, if it is a bare identifier
     line: int
+    arg0_list: Optional[list[str]] = None  # first argument, when an array of string literals
     # for recording unresolved sites when arg0 is not a string:
     arg0_expr: Optional[str] = None       # source text of the first argument
     arg0_names: list[str] = field(default_factory=list)  # identifiers it references
@@ -39,6 +43,13 @@ def iter_ts_files(repo: Path) -> Iterator[Path]:
     for p in iter_files(repo, (".ts", ".tsx"), skip=COMMON_SKIP | _SKIP):
         if p.name.endswith(".d.ts"):
             continue                      # declarations carry no routes or call sites
+        yield p
+
+
+def iter_js_files(repo: Path) -> Iterator[Path]:
+    for p in iter_files(repo, JS_SUFFIXES, skip=COMMON_SKIP | _SKIP):
+        if ".min." in p.name:
+            continue                      # a minified bundle is build output, not source
         yield p
 
 
@@ -78,17 +89,137 @@ def _names(node) -> list[str]:
 
 def _parser(path: Path):
     from tree_sitter_language_pack import get_parser
+    if path.suffix in JS_SUFFIXES:
+        return get_parser("javascript")   # the JavaScript grammar includes JSX
     return get_parser("tsx" if path.suffix == ".tsx" else "typescript")
 
 
-def iter_calls(path: Path) -> Iterator[Call]:
-    """Yield each call_expression of interest (verb member-calls and bare `fetch`)."""
+def parse_file(path: Path):
+    """The tree-sitter root node for `path`, or None if it cannot be read or parsed."""
     try:
-        src = path.read_bytes()
-        tree = _parser(path).parse(src)
+        return _parser(path).parse(path.read_bytes()).root_node
     except Exception:  # noqa: BLE001 - a bad parse must never abort the sweep
-        return
-    stack = [tree.root_node]
+        return None
+
+
+def _string_list(node) -> Optional[list[str]]:
+    """`["/a", "/b"]` -> ["/a", "/b"]; None unless every element is a string literal."""
+    if node is None or node.type != "array":
+        return None
+    elts = [c for c in node.children if c.is_named]
+    vals = [_string_value(c) if c.type == "string" else None for c in elts]
+    return vals if vals and all(v is not None for v in vals) else None
+
+
+#: What an Express app or router is called with: `app.use(mw)`, `app.listen(port)`,
+#: `router.route("/x")`, `router.param("id", fn)`. A request client is not, which is what
+#: separates `router.get("/x", handler)` from `api.get("/x", config)` in the same codebase.
+_EXPRESS_ONLY_METHODS = {"use", "listen", "route", "param"}
+#: Type names an Express app or router parameter is annotated with in TypeScript.
+_EXPRESS_TYPES = {"Express", "Application", "Router"}
+
+
+def _express_bindings(root) -> set[str]:
+    """Local names bound to the express module or its `Router` export."""
+    names = {"express", "Router"}
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        stack.extend(n.children)
+        if n.type == "import_statement":
+            src = n.child_by_field_name("source")
+            if _string_value(src) != "express":
+                continue
+            for c in n.children:
+                if c.type == "import_clause":
+                    for ident in _names(c):
+                        names.add(ident)
+        elif n.type == "variable_declarator":
+            value = n.child_by_field_name("value")
+            if value is None or value.type != "call_expression":
+                continue
+            fn = value.child_by_field_name("function")
+            args = value.child_by_field_name("arguments")
+            if fn is None or fn.text != b"require" or args is None:
+                continue
+            first = next((c for c in args.children if c.is_named), None)
+            if _string_value(first) == "express":
+                names.update(_names(n.child_by_field_name("name")))
+    return names
+
+
+def _is_express_constructor(call, bindings: set[str]) -> bool:
+    """`express()`, `Router()`, `express.Router()`, or the same under a local alias."""
+    fn = call.child_by_field_name("function")
+    if fn is None:
+        return False
+    if fn.type == "identifier":
+        return fn.text.decode() in bindings
+    if fn.type == "member_expression":
+        prop = fn.child_by_field_name("property")
+        return prop is not None and prop.text == b"Router"
+    return False
+
+
+def express_receivers(root) -> set[str]:
+    """Identifiers in this file that denote an Express app or router.
+
+    A verb call with a path literal is a route only on one of these. Every receiver used
+    to count, which was harmless in a TypeScript server and wrong in a UI codebase, where
+    `api.get("/orders", config)` is a request to another service, not an endpoint.
+
+    A name qualifies when it is bound to `express()` or a `Router()`, when it is called
+    with a method only an app or router has, or when it is a parameter typed as one. The
+    second covers the common `export function addRoutes(app) { app.use(...); app.get(...) }`.
+    """
+    if root is None:
+        return set()
+    bindings = _express_bindings(root)
+    out: set[str] = set()
+    stack = [root]
+    while stack:
+        n = stack.pop()
+        stack.extend(n.children)
+        if n.type in ("variable_declarator", "assignment_expression"):
+            target = n.child_by_field_name("name") or n.child_by_field_name("left")
+            value = n.child_by_field_name("value") or n.child_by_field_name("right")
+            if target is not None and target.type == "identifier" and value is not None \
+                    and value.type == "call_expression" and _is_express_constructor(value, bindings):
+                out.add(target.text.decode())
+        elif n.type == "call_expression":
+            fn = n.child_by_field_name("function")
+            if fn is not None and fn.type == "member_expression":
+                obj, prop = fn.child_by_field_name("object"), fn.child_by_field_name("property")
+                if obj is not None and obj.type == "identifier" and prop is not None \
+                        and prop.text.decode() in _EXPRESS_ONLY_METHODS:
+                    out.add(obj.text.decode())
+        elif n.type in ("required_parameter", "optional_parameter"):
+            pattern, typ = n.child_by_field_name("pattern"), n.child_by_field_name("type")
+            if pattern is not None and pattern.type == "identifier" and typ is not None \
+                    and _EXPRESS_TYPES & set(_type_names(typ)):
+                out.add(pattern.text.decode())
+    return out
+
+
+def _type_names(node) -> list[str]:
+    out, stack = [], [node]
+    while stack:
+        n = stack.pop()
+        if n.type == "type_identifier":
+            out.append(n.text.decode())
+        stack.extend(n.children)
+    return out
+
+
+def iter_calls(path: Path, root=None) -> Iterator[Call]:
+    """Yield each call_expression of interest (verb member-calls and bare `fetch`).
+
+    Pass `root` from `parse_file` to reuse a tree already parsed for this file."""
+    if root is None:
+        root = parse_file(path)
+        if root is None:
+            return
+    stack = [root]
     while stack:
         node = stack.pop()
         stack.extend(node.children)
@@ -125,6 +256,7 @@ def iter_calls(path: Path) -> Iterator[Call]:
             arg0_names = _names(arg_nodes[0])
         yield Call(obj=obj, verb=verb, arg0=arg0, arg1_name=arg1_name,
                    line=node.start_point[0] + 1,
+                   arg0_list=_string_list(arg_nodes[0]) if arg_nodes else None,
                    arg0_expr=arg0_expr, arg0_names=arg0_names or [],
                    arg1_is_handler=arg1_is_handler,
                    has_object_arg=any(a.type == "object" for a in arg_nodes),

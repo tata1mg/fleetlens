@@ -340,9 +340,8 @@ def test_a_file_that_cannot_be_parsed_is_counted(tmp_path):
     (tmp_path / "app" / "ok.py").write_text(
         'from fastapi import APIRouter\nrouter = APIRouter()\n'
         '@router.get("/health")\nasync def health(): ...\n')
-    # `async` became a reserved word in Python 3.7; this is real code from a live service
-    (tmp_path / "app" / "legacy.py").write_text(
-        "from asyncio import async as call_asynchronously\n")
+    # Python 2: no current interpreter reads this, and no retry can make it parse
+    (tmp_path / "app" / "legacy.py").write_text('print "hello"\n')
 
     skipped: list = []
     found = PythonWebAdapter().discover(tmp_path, skipped)
@@ -351,3 +350,68 @@ def test_a_file_that_cannot_be_parsed_is_counted(tmp_path):
     bad = [s for s in skipped if s.reason == "unparseable-file"]
     assert [s.file for s in bad] == ["app/legacy.py"]
     assert "SyntaxError" in bad[0].expr and "line 1" in bad[0].expr
+
+
+def test_pre_3_7_asyncio_code_is_read(tmp_path):
+    """Code written for Python 3.4's asyncio uses `async` as a name, a keyword since 3.7.
+    Its route module failed to parse, so the service indexed with no endpoints at all."""
+    (tmp_path / "svc").mkdir()
+    (tmp_path / "svc" / "service.py").write_text('''
+import asyncio
+from asyncio import coroutine, async as call_async
+from house_framework import get, post
+
+class Service:
+    @get(path='/v4/orders/{order_id}')
+    def order(self, request, order_id):
+        asyncio.async(self.audit(order_id))
+        return (yield from self.load(order_id))
+
+    @post(path='/v4/orders')
+    async def create(self, request):
+        async with self.lock:
+            return [x async for x in self.rows()]
+''')
+    skipped: list = []
+    found = PythonWebAdapter().discover(tmp_path, skipped)
+
+    assert {(i.method, i.path) for i in found} == {("GET", "/v4/orders/{order_id}"),
+                                                   ("POST", "/v4/orders")}
+    assert [i.evidence for i in found if i.method == "GET"] == [["svc/service.py:8"]]
+    assert not [s for s in skipped if s.reason == "unparseable-file"]
+
+
+def test_a_repo_whose_only_route_file_cannot_be_parsed_still_reports_it(tmp_path):
+    """`applies` used to decide from the files it could read. When the route module was the
+    one that failed, the adapter never ran and the failure was never recorded."""
+    from fleetlens.adapters.registry import discover_interfaces
+
+    (tmp_path / "svc").mkdir()
+    (tmp_path / "svc" / "helpers.py").write_text("def add(a, b):\n    return a + b\n")
+    (tmp_path / "svc" / "service.py").write_text(
+        'from house_framework import get\n\n@get(path="/health")\ndef health():\n'
+        '    print "ok"\n')
+
+    skipped: list = []
+    found = discover_interfaces(tmp_path, skipped)
+
+    assert found == []
+    assert [s.file for s in skipped if s.reason == "unparseable-file"] == ["svc/service.py"]
+
+
+def test_a_module_whose_every_path_is_computed_is_still_read(tmp_path):
+    """`@get(path='{PREFIX}/x'.format(...))` has no literal for the idiom check to see, so
+    the whole module went unread: not found, and not recorded as unresolved either."""
+    found, skipped = _found(tmp_path, '''
+from house_framework import get, post
+PREFIX = "/v1/chat"
+
+@post(path='{PREFIX}/login'.format(PREFIX=PREFIX))
+def login(request): ...
+
+@get(path=PREFIX + '/notifications')
+def notifications(request): ...
+''')
+    assert found == []
+    assert [(s.reason, s.method, s.line) for s in skipped] == [
+        ("non-literal-path", "POST", 5), ("non-literal-path", "GET", 8)]
