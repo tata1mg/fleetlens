@@ -377,7 +377,8 @@ def _cmd_enrich(args) -> int:
             eprog = _enrich_printer()
             try:
                 r = enrich(store, llm, embedder, kinds=summary_kinds,
-                           only_slug=args.service or "", progress=eprog)
+                           only_slug=args.service or "", progress=eprog,
+                           jobs=max(1, args.jobs))
             except ProviderError as exc:
                 # Hours of work may already be committed. A traceback buries both what was
                 # achieved and what to do about it.
@@ -528,6 +529,10 @@ def main(argv: list[str] | None = None) -> int:
                         "gaps (LLM-resolve sites the parsers could not; grounded, no embeddings)")
     p.add_argument("--service", default="",
                    help="limit to one service slug, for every kind")
+    p.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
+                   help="summarise N objects at once. For a remote provider most of the "
+                        "time per object is a round trip, so this scales well; for a local "
+                        "model one request already saturates the hardware, so leave it at 1")
     p.set_defaults(func=_cmd_enrich)
 
     p = sub.add_parser("doctor", help="check this machine can index, and that a repo can be")

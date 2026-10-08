@@ -292,3 +292,235 @@ def test_a_4xx_is_not_retried_but_a_5xx_is(monkeypatch):
         with pytest.raises(providers.ProviderError):
             providers._post("http://x", {})
         assert tries["n"] == expected, code
+
+
+# --- concurrent summarising (--jobs) ------------------------------------------------
+
+
+class SlowLLM(FakeLLM):
+    """Records how many calls are in flight at once, so overlap can be asserted on."""
+
+    def __init__(self, delay=0.05):
+        super().__init__()
+        self.delay = delay
+        self.live = 0
+        self.peak = 0
+        self._lock = __import__("threading").Lock()
+
+    def complete(self, prompt, *, system=None, max_tokens=64):
+        import time
+        with self._lock:
+            self.live += 1
+            self.peak = max(self.peak, self.live)
+        try:
+            time.sleep(self.delay)
+            return super().complete(prompt, system=system, max_tokens=max_tokens)
+        finally:
+            with self._lock:
+                self.live -= 1
+
+
+def _many_ifaces(n=12):
+    s = SqliteStore(":memory:")
+    for i in range(n):
+        s.upsert_object(_iface("shop", f"get-{i}", "GET", f"/orders/{i}"))
+    s.upsert_object(KnowledgeObject("service", "shop", "shop", None, "unknown", "static",
+                                    "index", None, None, {}))
+    s.commit()
+    return s
+
+
+def test_jobs_above_one_produces_the_same_enrichments():
+    """Concurrency is a scheduling change, not a result change."""
+    out = []
+    for jobs in (1, 4):
+        store = _many_ifaces()
+        enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=jobs)
+        rows = store._conn.execute(
+            "SELECT object_id, summary, content_hash FROM enrichments ORDER BY object_id"
+        ).fetchall()
+        out.append([tuple(r) for r in rows])
+    assert out[0] == out[1]
+    assert len(out[0]) == 12
+
+
+def test_jobs_above_one_actually_overlaps_requests():
+    llm = SlowLLM()
+    enrich(_many_ifaces(), llm, FakeEmbedder(), kinds=("interface",), jobs=4)
+    assert llm.peak > 1, "requests were serialised despite jobs=4"
+    assert llm.calls == 12
+
+
+def test_jobs_of_one_stays_sequential():
+    llm = SlowLLM()
+    enrich(_many_ifaces(), llm, FakeEmbedder(), kinds=("interface",), jobs=1)
+    assert llm.peak == 1
+
+
+def test_concurrent_failure_keeps_what_was_already_paid_for():
+    """A provider that dies mid-run must not throw away committed summaries."""
+    class Dies(FakeLLM):
+        def complete(self, prompt, *, system=None, max_tokens=64):
+            if self.calls >= 8:
+                raise RuntimeError("provider gave up")
+            return super().complete(prompt, system=system, max_tokens=max_tokens)
+
+    store = _many_ifaces()
+    with pytest.raises(RuntimeError):
+        enrich(store, Dies(), FakeEmbedder(), kinds=("interface",), jobs=4)
+    kept = store._conn.execute("SELECT count(*) FROM enrichments").fetchone()[0]
+    assert kept > 0
+
+
+def test_concurrent_run_still_skips_unchanged_objects():
+    store = _many_ifaces()
+    first = enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=4)
+    second = enrich(store, FakeLLM(), FakeEmbedder(), kinds=("interface",), jobs=4)
+    assert first["generated"] == 12 and first["skipped"] == 0
+    assert second["generated"] == 0 and second["skipped"] == 12
+
+
+# --- rate limiting ------------------------------------------------------------------
+
+
+def _http_error(code, headers=None):
+    import io
+    import urllib.error
+    return urllib.error.HTTPError("http://x/api", code, "nope", headers or {},
+                                  io.BytesIO(b'{"error":"slow down"}'))
+
+
+def test_rate_limit_is_retried(monkeypatch):
+    """429 means the request was fine and arrived too soon, so it is worth repeating."""
+    from fleetlens.enrich import providers
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise _http_error(429, {"Retry-After": "0"})
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"response":"ok"}'
+        return R()
+
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+    assert providers._post("http://x/api", {})["response"] == "ok"
+    assert calls["n"] == 2
+
+
+def test_other_client_errors_are_not_retried(monkeypatch):
+    from fleetlens.enrich import providers
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise _http_error(401)
+
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+    with pytest.raises(providers.ProviderError):
+        providers._post("http://x/api", {})
+    assert calls["n"] == 1
+
+
+def test_persistent_rate_limit_says_what_to_do(monkeypatch):
+    from fleetlens.enrich import providers
+
+    def fake_urlopen(req, timeout=None):
+        raise _http_error(429)
+
+    monkeypatch.setattr(providers.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(providers.time, "sleep", lambda _s: None)
+    with pytest.raises(providers.ProviderError, match="Lower --jobs"):
+        providers._post("http://x/api", {})
+
+
+# --- service grounding beyond endpoints ----------------------------------------------
+
+
+def _svc(slug, root=""):
+    return KnowledgeObject("service", slug, slug, None, "unknown", "static", "index",
+                           None, None, {"root": root})
+
+
+def _symbol(slug, path, qualname, kind="function"):
+    return KnowledgeObject("code_symbol", f"{slug}:{path}::{qualname}", qualname, None,
+                           "unknown", "static", "symbols", None, None,
+                           {"path": path, "qualname": qualname, "kind": kind})
+
+
+def test_a_service_with_no_endpoints_is_grounded_in_its_exported_code():
+    """A library has no routes. Describing it from its slug would be invention."""
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = SqliteStore(":memory:")
+    s.upsert_object(_svc("retrylib"))
+    for name in ("CircuitBreaker", "retry_with_backoff", "_private_helper"):
+        s.upsert_object(_symbol("retrylib", "retrylib/resilience.py", name))
+    s.commit()
+    prompt, _, vocab = _svc_ground(s.get("service:retrylib"), s, s)
+    assert "public surface is the code it exports" in prompt
+    assert "CircuitBreaker" in prompt and "retry_with_backoff" in prompt
+    assert "(none discovered)" not in prompt
+    assert "retrylib" in vocab
+    # Private symbols rank last, so a budget that fits everything still shows them after.
+    assert prompt.index("CircuitBreaker") < prompt.index("_private_helper")
+
+
+def test_endpoints_still_win_when_a_service_has_them():
+    """The symbol fallback is a fallback, not an addition."""
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = _store_with_ifaces()
+    s.upsert_object(_symbol("shop", "shop/util.py", "helper"))
+    s.commit()
+    prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "Endpoints it exposes:" in prompt
+    assert "public surface is the code it exports" not in prompt
+
+
+def test_readme_is_included_and_changes_the_content_hash(tmp_path):
+    from fleetlens.enrich.enrich import _svc_ground
+
+    (tmp_path / "README.md").write_text("# Shop\n\nOwns the pharmacy order ledger.\n")
+    s = _store_with_ifaces()
+    s.upsert_object(_svc("shop", str(tmp_path)))
+    s.commit()
+    prompt, h1, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "pharmacy order ledger" in prompt
+    assert "Declared purpose" in prompt
+
+    (tmp_path / "README.md").write_text("# Shop\n\nOwns the loyalty points ledger.\n")
+    _, h2, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert h2 != h1, "editing a README must re-summarise that service"
+
+
+def test_grounding_survives_a_root_that_is_not_there():
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = _store_with_ifaces()
+    s.upsert_object(_svc("shop", "/definitely/not/here"))
+    s.commit()
+    prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "Declared purpose" not in prompt
+    assert "Endpoints it exposes:" in prompt
+
+
+def test_dependents_are_named():
+    from fleetlens.enrich.enrich import _svc_ground
+    from fleetlens.store.models import Relationship
+
+    s = _store_with_ifaces()
+    s.upsert_object(_svc("checkout"))
+    s.commit()
+    s.replace_edges("resolver", ["service:checkout"],
+                    [Relationship("service:checkout", "calls", "service:shop",
+                                  "resolver", {})])
+    s.commit()
+    prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
+    assert "Depended on by: checkout" in prompt

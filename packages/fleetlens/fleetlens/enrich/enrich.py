@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import hashlib
 import os
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 
 from ..store.base import KnowledgeStore, SemanticStore
 from .providers import EmbeddingProvider, LLMProvider
+from .repo_docs import declared
 
 _IFACE_SYS = "You write terse, one-sentence descriptions of what an API endpoint does."
 _SVC_SYS = ("You describe what a microservice is responsible for, in plain prose, for an "
@@ -46,6 +48,12 @@ SVC_ENDPOINTS = int(os.environ.get("FLEETLENS_SUMMARY_ENDPOINTS", "60"))
 #: two queries and improved a third, while the tail beyond it bought almost nothing.
 EMBED_PATHS = int(os.environ.get("FLEETLENS_EMBED_PATHS", "30"))
 EMBED_CHARS = int(os.environ.get("FLEETLENS_EMBED_CHARS", "1500"))
+#: How much of a README's opening section to read. 0 turns it off, for anyone who wants the
+#: index to assert nothing a human wrote by hand.
+README_CHARS = int(os.environ.get("FLEETLENS_SUMMARY_README_CHARS", "1500"))
+#: Exported symbols to list when a service has no endpoints and no queues. A library's
+#: public functions are its interface; without this its summary is written from a slug.
+SVC_SYMBOLS = int(os.environ.get("FLEETLENS_SUMMARY_SYMBOLS", "40"))
 
 
 def _hash(*parts: str) -> str:
@@ -69,6 +77,115 @@ def _iface_ground(obj) -> tuple[str, str]:
     lines.append("In one short sentence, describe what this endpoint does, naming the "
                  "domain concepts involved. Reply with only the sentence.")
     return "\n".join(lines), _hash(method, path, handler, doc), ""
+
+
+#: Symbol kinds that can be part of a public API, most interesting first. A method belongs
+#: to a class that is already listed, so it is the weakest signal and ranks last. An
+#: `interface` is a type shape rather than behaviour, which describes data and not what the
+#: code does, so it ranks below both.
+_SURFACE_KINDS = ("class", "function", "interface", "method")
+#: Files that declare types and contain no implementation. A repository full of these would
+#: otherwise fill its whole budget with the shapes of its data.
+_DECLARATION_ONLY = (".d.ts", ".pyi", ".h", ".hpp")
+#: Directory names that every repository uses and that name nothing about this one. Dropped
+#: so the module list carries domain vocabulary rather than layout convention.
+_GENERIC_DIRS = {"src", "app", "lib", "libs", "pkg", "internal", "source", "main", "java",
+                 "com", "org", "net", "index", "core", "common", "shared", "utils", "util",
+                 "helpers", "scripts", "components", "pages", "views", "view", "public",
+                 "static", "assets", "types", "config", "constants", "node_modules"}
+
+
+def _exported(knowledge: KnowledgeStore, slug: str, limit: int) -> tuple[list[str], list[str]]:
+    """(prompt lines, module names) for a repository whose public surface is its code.
+
+    A library, a frontend or a worker with no routes has nothing in the endpoint list, and
+    asking a model to describe a service from its slug alone is asking it to invent. What a
+    library exposes is its exported symbols, and those are already indexed.
+
+    Public is approximated by the convention every language shares: a leading underscore
+    means private. Nothing here is specific to one ecosystem, and a wrong guess costs a line
+    in a prompt rather than a wrong fact in the index.
+    """
+    under = getattr(knowledge, "list_objects_under", None)
+    syms = under(f"code_symbol:{slug}:") if under else []
+    if not syms:
+        return [], []
+
+    def rank(o) -> tuple:
+        pay = o.payload or {}
+        name = pay.get("qualname") or o.name or ""
+        leaf = name.rsplit(".", 1)[-1]
+        kind = pay.get("kind", "")
+        path = pay.get("path", "")
+        return (leaf.startswith("_"),                      # private last
+                path.endswith(_DECLARATION_ONLY),          # type-only files after real code
+                _SURFACE_KINDS.index(kind) if kind in _SURFACE_KINDS else len(_SURFACE_KINDS),
+                path.count("/"),                           # shallower is more public
+                name)
+
+    # Grouped by file and then taken one file at a time, round-robin. Ranking alone puts
+    # the whole budget into whichever file happens to sort first: a store with twenty
+    # near-identical action creators would describe that file and nothing else. One symbol
+    # per file per pass covers the repository instead.
+    by_file: dict[str, list] = {}
+    for o in sorted(syms, key=rank):
+        by_file.setdefault((o.payload or {}).get("path", ""), []).append(o)
+    files = sorted(by_file, key=lambda f: rank(by_file[f][0]))
+
+    seen, picked, depth = set(), [], 0
+    while len(picked) < limit and any(len(by_file[f]) > depth for f in files):
+        for f in files:
+            if len(picked) >= limit:
+                break
+            if len(by_file[f]) <= depth:
+                continue
+            o = by_file[f][depth]
+            pay = o.payload or {}
+            name = pay.get("qualname") or o.name or ""
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            bits = [f"  {name}"]
+            if pay.get("kind"):
+                bits.append(f"({pay['kind']})")
+            if f:
+                bits.append(f"in {f}")
+            doc = (o.summary or "").strip()
+            if doc:
+                bits.append("— " + doc.splitlines()[0])
+            picked.append(" ".join(bits))
+        depth += 1
+    # Directory names from the symbol paths, rather than another walk of the disk. On a
+    # library these are the domain vocabulary and often the only one present. Taken at every
+    # depth and ranked by how many symbols sit under them, because the interesting level
+    # differs per ecosystem: a Python package names its domain at depth one and a frontend
+    # does it three directories down, under src/view/pages.
+    freq: dict[str, int] = {}
+    for o in syms:
+        for part in (o.payload or {}).get("path", "").split("/")[:-1]:
+            part = part.strip().lower()
+            if part and part not in _GENERIC_DIRS and not part.startswith("."):
+                freq[part] = freq.get(part, 0) + 1
+    mods = sorted(freq, key=lambda m: (-freq[m], m))[:25]
+    return picked, mods
+
+
+def _dependents(knowledge, obj) -> list[str]:
+    """Services that call or publish to this one. Derived, so it never goes stale.
+
+    Who depends on something is strong evidence about what it is for, and it is evidence
+    the service itself cannot give you: a shared library looks small from the inside and
+    central from the outside.
+    """
+    edges_batch = getattr(knowledge, "edges_batch", None)
+    if edges_batch is None:
+        return []
+    try:
+        edges = edges_batch([obj.id], direction="in")
+    except Exception:       # noqa: BLE001 - grounding must never fail a run
+        return []
+    return sorted({e.from_id.split(":", 1)[-1] for e in edges
+                   if e.from_id.startswith("service:") and e.from_id != obj.id})[:25]
 
 
 def _svc_ground(obj, knowledge: KnowledgeStore, semantic=None) -> tuple[str, str]:
@@ -111,24 +228,57 @@ def _svc_ground(obj, knowledge: KnowledgeStore, semantic=None) -> tuple[str, str
     queues = sorted({i.payload.get("path", "") for i in ifaces
                      if i.payload.get("type") == "event"})[:20]
 
-    prompt = [f"Service: {slug}", "", "Endpoints it exposes:"]
-    prompt += lines or ["  (none discovered)"]
-    if len(ifaces) > SVC_ENDPOINTS:
-        prompt.append(f"  … and {len(ifaces) - SVC_ENDPOINTS} more")
+    # What a repository says about itself, kept separate from what was extracted from it.
+    claims, claims_hash = declared(obj.payload.get("root", ""), README_CHARS)
+
+    # The public surface is whatever this thing exposes, and routes are only one form of
+    # it. A library exposes exported symbols, a worker exposes queue handlers. Falling back
+    # rather than printing "(none discovered)" is what stops a model inventing a service
+    # from its slug.
+    exported, modules = ([], [])
+    if not lines and not queues:
+        exported, modules = _exported(knowledge, slug, SVC_SYMBOLS)
+
+    prompt = [f"Service: {slug}"]
+    if claims:
+        prompt += [""] + claims
+    prompt += ["", "Observed surface, extracted from source this run:"]
+    if lines:
+        prompt += ["", "Endpoints it exposes:"] + lines
+        if len(ifaces) > SVC_ENDPOINTS:
+            prompt.append(f"  … and {len(ifaces) - SVC_ENDPOINTS} more")
     if queues:
         prompt += ["", "Message channels: " + ", ".join(queues)]
+    if exported:
+        prompt += ["", "It exposes no endpoints. Its public surface is the code it "
+                       "exports:"] + exported
+    if modules:
+        prompt += ["", "Top-level modules: " + ", ".join(modules)]
+    if not lines and not queues and not exported:
+        prompt += ["", "  (nothing discovered)"]
     if outbound:
         prompt += ["", "It calls out to: " + ", ".join(outbound)]
+    dependents = _dependents(knowledge, obj)
+    if dependents:
+        prompt += ["", "Depended on by: " + ", ".join(dependents)]
     prompt += ["",
                "Describe what this service is responsible for. Cover each distinct area "
                "of functionality above, not just the first few. Name the domain concepts "
                "an engineer would search for. Plain prose, no preamble, no closing "
-               "summary paragraph, and nothing that is not supported by the list above."]
+               "summary paragraph, and nothing that is not supported by what you were "
+               "given. Where the declared purpose and the observed surface disagree, "
+               "follow the observed surface."]
     # Endpoint paths are vocabulary a summary will not fully contain, and they are what a
     # query like "payment refunds" actually matches on. Carried separately so they reach
-    # the vector without being shown to a reader.
-    vocab = " ".join(i.payload.get("path", "") for i in ifaces[:EMBED_PATHS])
-    return ("\n".join(prompt), _hash(slug, *sorted(shape), *outbound, *queues), vocab)
+    # the vector without being shown to a reader. With no endpoints, the module names play
+    # the same role.
+    vocab = (" ".join(i.payload.get("path", "") for i in ifaces[:EMBED_PATHS])
+             or " ".join(modules))
+    # claims_hash is in the hash so that editing a README re-summarises that one service.
+    return ("\n".join(prompt),
+            _hash(slug, *sorted(shape), *outbound, *queues, *dependents,
+                  *(e.split(" ")[0] for e in exported), claims_hash),
+            vocab)
 
 
 _SENTENCE_END = (". ", ".\n", "! ", "? ", ".", "!", "?")
@@ -169,6 +319,17 @@ def _embed_text(obj, kind: str, summary: str, vocab: str = "") -> str:
     return " ".join(p for p in (x.strip() for x in parts) if p)[:EMBED_CHARS]
 
 
+def _summarise(llm: LLMProvider, kind: str, prompt: str) -> str:
+    """One summary. Pure with respect to the store, so it is safe to run on a worker."""
+    system = _IFACE_SYS if kind == "interface" else _SVC_SYS
+    summary = llm.complete(prompt, system=system, max_tokens=TOKENS.get(kind, 48)).strip()
+    # An endpoint answer is one line; a service answer is prose and may run to several, so
+    # only the first line is kept where that is the shape asked for.
+    if kind == "interface":
+        summary = summary.split("\n")[0]
+    return _whole_sentences(summary, CHARS.get(kind, 300))
+
+
 #: Objects per batch. Each batch is one embedding request and one commit, so this trades
 #: request overhead against how much work a crash can cost. Small: on a local model a
 #: summary takes seconds, so 5 keeps the loss window under half a minute on a run that
@@ -190,7 +351,7 @@ def _owned_by(obj, kind: str, slug: str) -> bool:
 
 def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
            kinds: tuple[str, ...] = ("interface", "service"), only_slug: str = "",
-           progress=None) -> dict:
+           progress=None, jobs: int = 1) -> dict:
     """Enrich the given object kinds. `store` implements KnowledgeStore + SemanticStore.
 
     Work is committed in batches rather than at the end. On a fleet this runs for hours:
@@ -226,7 +387,9 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
         for (obj, summary, chash, _v), vec in zip(batch, vectors):
             semantic.upsert_enrichment(obj.id, kind, model, len(vec), summary, chash, vec)
         store.commit()
-        return len(batch)
+        n = len(batch)
+        batch.clear()
+        return n
 
     for kind in kinds:
         existing = semantic.enrichment_hashes(kind, model)
@@ -237,8 +400,16 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
         if only_slug:
             objs = [o for o in objs if _owned_by(o, kind, only_slug)]
         todo = len(objs)
-        batch: list = []            # (obj, summary, content_hash)
-        try:
+        batch: list = []            # (obj, summary, content_hash, vocab)
+
+        def ready(kind=kind, objs=objs, existing=existing, todo=todo, batch=batch):
+            """(obj, prompt, hash, vocab) for each object that still needs a summary.
+
+            Grounding stays on the calling thread even when the summaries do not: a
+            service's prompt is built by reading its interfaces back out of the store, and
+            the store is one connection.
+            """
+            nonlocal skipped
             for n, obj in enumerate(objs, 1):
                 prompt, chash, vocab = (_iface_ground(obj) if kind == "interface"
                                         else _svc_ground(obj, knowledge, semantic))
@@ -254,18 +425,50 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
                 say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,
                                "pending": len(batch), "skipped": skipped,
                                "id": obj.id, "state": "summarising"})
-                system = _IFACE_SYS if kind == "interface" else _SVC_SYS
-                summary = llm.complete(prompt, system=system,
-                                       max_tokens=TOKENS.get(kind, 48)).strip()
-                # An endpoint answer is one line; a service answer is prose and may run to
-                # several, so only the first line is kept where that is the shape asked for.
-                if kind == "interface":
-                    summary = summary.split("\n")[0]
-                summary = _whole_sentences(summary, CHARS.get(kind, 300))
-                batch.append((obj, summary, chash, vocab))
-                if len(batch) >= BATCH:
-                    generated += flush(kind, batch)
-                    batch = []
+                yield obj, prompt, chash, vocab
+
+        try:
+            if jobs <= 1:
+                for obj, prompt, chash, vocab in ready():
+                    batch.append((obj, _summarise(llm, kind, prompt), chash, vocab))
+                    if len(batch) >= BATCH:
+                        generated += flush(kind, batch)
+            else:
+                # A remote provider is latency-bound, not compute-bound: the sequential
+                # path above spends most of a run waiting on a round trip, and from outside
+                # the provider's region that round trip is most of the time per object.
+                # Keeping several requests in flight turns that wait into throughput. A
+                # local model is the opposite case, where one request already saturates the
+                # hardware and a second only splits it, which is why this is off by default.
+                work = ready()
+                inflight: dict = {}
+                with ThreadPoolExecutor(max_workers=jobs) as pool:
+                    drained = False
+                    while inflight or not drained:
+                        # Submit at most twice the worker count. Unbounded submission would
+                        # ground every object in the fleet up front and hold the results in
+                        # memory, and would leave nothing to cancel if the provider starts
+                        # refusing.
+                        while not drained and len(inflight) < jobs * 2:
+                            nxt = next(work, None)
+                            if nxt is None:
+                                drained = True
+                                break
+                            obj, prompt, chash, vocab = nxt
+                            fut = pool.submit(_summarise, llm, kind, prompt)
+                            inflight[fut] = (obj, chash, vocab)
+                        if not inflight:
+                            break
+                        # Completion order, not submission order. Nothing downstream
+                        # depends on the order within a kind: every row is keyed by object
+                        # id, and the kinds themselves still run in sequence, which is what
+                        # services need since their prompts read interface summaries.
+                        done, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                        for fut in done:
+                            obj, chash, vocab = inflight.pop(fut)
+                            batch.append((obj, fut.result(), chash, vocab))
+                            if len(batch) >= BATCH:
+                                generated += flush(kind, batch)
             generated += flush(kind, batch)
         except Exception:
             # Keep what has already been paid for. Each summary in the part-filled batch
