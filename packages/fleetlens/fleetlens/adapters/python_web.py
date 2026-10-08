@@ -325,10 +325,23 @@ def _bare_verb_routes(tree: ast.Module) -> bool:
                 continue
             if dec.func.id.lower() not in _VERBS and dec.func.id not in _ROUTE_ATTRS:
                 continue
-            n = _literal_path(dec)
-            if n is not None and looks_like_a_path(_str(n)):
+            if _names_a_route(dec):
                 return True
     return False
+
+
+def _names_a_route(dec: ast.Call) -> bool:
+    """Whether a verb-named decorator's arguments say it registers a route.
+
+    A URL-shaped literal says so. So does a path passed by keyword, whatever its value:
+    `@get(path='{BASE}/login'.format(BASE=BASE))` is a route whose path is computed, and
+    requiring a literal meant a module written entirely that way was never opened. Its
+    routes were neither found nor recorded as unresolved.
+    """
+    n = _literal_path(dec)
+    if n is not None and looks_like_a_path(_str(n)):
+        return True
+    return any(kw.arg in _PATH_KWARGS for kw in dec.keywords)
 
 
 def _has_route_idiom(tree: ast.Module) -> bool:
@@ -351,8 +364,7 @@ def _has_route_idiom(tree: ast.Module) -> bool:
                 continue
             if _dec_name(dec).lower() not in _VERBS and _dec_name(dec) not in _ROUTE_ATTRS:
                 continue
-            n = _literal_path(dec)
-            if n is not None and looks_like_a_path(_str(n)):
+            if _names_a_route(dec):
                 return True
     return False
 
@@ -450,9 +462,16 @@ class PythonWebAdapter(InterfaceAdapter):
     name = "python-web"
 
     def applies(self, repo: Path) -> bool:
+        """Whether any module registers routes, or might and could not be read.
+
+        A file that fails to parse counts. Deciding from the readable files alone is how a
+        service whose only route module used pre-3.7 syntax indexed with no interfaces and
+        no skipped sites: this said no, `discover` never ran, and the `unparseable-file`
+        record it would have written, which is what `fl doctor` reports, never existed.
+        """
         for p in _iter_py(repo):
             _, tree = read_and_parse(p)
-            if tree is not None and (_framework_of(tree) or _has_route_idiom(tree)):
+            if tree is None or _framework_of(tree) or _has_route_idiom(tree):
                 return True
         return False
 
