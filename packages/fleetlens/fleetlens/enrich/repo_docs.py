@@ -49,7 +49,13 @@ def _is_stop_heading(line: str) -> bool:
     return text in _STOP_WORDS
 #: Badge and image-only lines. A row of shields.io links is pure noise at the top of most
 #: READMEs and would otherwise eat the character budget before any prose is reached.
-_BADGE = re.compile(r"^\s*(\[!\[.*?\]\(.*?\)\]\(.*?\)\s*)+$|^\s*(!\[.*?\]\(.*?\)\s*)+$")
+#: Each part is a negated class rather than `.*?`, so a part cannot run past its own
+#: closing bracket; with `.*?` inside the repeated group, a long run of `[![](`-like text
+#: backtracks exponentially, and README text comes from arbitrary repositories.
+_BADGE = re.compile(
+    r"^\s*(?:\[!\[[^\]]*\]\([^)]*\)\]\([^)]*\)\s*)+$"
+    r"|^\s*(?:!\[[^\]]*\]\([^)]*\)\s*)+$"
+)
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 _HTML_TAG = re.compile(r"<[^>]+>")
 #: rST section underlines, which are punctuation-only lines that read as noise in a prompt.

@@ -35,6 +35,19 @@ def test_badges_and_html_comments_do_not_eat_the_budget(tmp_path):
     assert "maintainers" not in prose
 
 
+def test_badge_filter_does_not_backtrack_on_hostile_lines(tmp_path):
+    """README text is untrusted; a near-badge line must fail fast, not hang the run."""
+    import time
+    hostile = "[![" + "]()](![" * 5000 + "\n"
+    row = "[![a](https://img.shields.io/a)](https://x) [![b](https://img.shields.io/b)](https://y)\n"
+    (tmp_path / "README.md").write_text("# T\n\n" + row + hostile + "\nkept prose\n")
+    started = time.monotonic()
+    prose, _ = read_readme(tmp_path, 100_000)
+    assert time.monotonic() - started < 1.0
+    assert "shields.io" not in prose
+    assert "kept prose" in prose
+
+
 def test_a_readme_that_is_only_a_setup_guide_yields_nothing(tmp_path):
     """Better no claim than a misleading one."""
     (tmp_path / "README.md").write_text("## Prerequisites\n\n- python 3.9\n- postgres\n")
