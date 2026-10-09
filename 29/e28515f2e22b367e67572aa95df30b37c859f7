@@ -1,0 +1,21 @@
+packages/fleetlens/fleetlens/enrich/repo_docs.py
+  s_f413a7a95a858a::t_143faa6247b652 52-58
+packages/fleetlens/tests/test_repo_docs.py
+  s_f413a7a95a858a::t_cd5737da40c56e 38-50
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29e28515f2e22b367e67572aa95df30b37c859f7",
+  "prompts": {},
+  "sessions": {
+    "s_f413a7a95a858a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c905e87d-5ac6-46e7-911c-b9a4f88bcbac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
