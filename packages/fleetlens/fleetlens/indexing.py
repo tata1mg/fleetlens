@@ -21,7 +21,12 @@ from .adapters.ts_outbound import discover_outbound as _ts_outbound
 from .callgraph import cli as cg_cli
 from .loaders import callgraph as cg_loader
 from .loaders import interfaces as iface_loader
-from .manifest import ServiceSpec, resolve_services
+from .manifest import (
+    ServiceSpec,
+    find_manifest,
+    guidance_roots,
+    resolve_services,
+)
 from .store.models import KnowledgeObject
 from .store.sqlite import SqliteStore
 
@@ -67,9 +72,17 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
     is happening looks indistinguishable from one that has hung.
     """
     repo = Path(repo).resolve()
-    specs = resolve_services(repo, default_name=slug)
-    return [index_service(repo, spec, store, default_language=language, llm=llm,
-                          progress=progress, stats=stats) for spec in specs]
+    out = [index_service(repo, spec, store, default_language=language, llm=llm,
+                         progress=progress, stats=stats)
+           for spec in resolve_services(repo, default_name=slug)]
+    # A repo may declare rules as well as, or instead of, code. Added rather than replaced:
+    # this call has seen one rulebook, and a rule missing from it was never its to withdraw.
+    roots = guidance_roots(repo)
+    if roots:
+        from .guidance import ingest_roots
+        r = ingest_roots(store, roots, replace=False)
+        out.append({"slug": repo.name, "guidance": r})
+    return out
 
 
 def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "auto",
@@ -213,6 +226,11 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
 def _looks_like_repo(d: Path) -> bool:
     if not d.is_dir() or d.name.startswith(".") or d.name in _SKIP:
         return False
+    # A fleetlens.yaml is the strongest marker there is: the repo has been told what it is.
+    # Checked first, and separately, because a rulebook holds no source at all and would
+    # otherwise be passed over by every test below it.
+    if find_manifest(d) is not None:
+        return True
     # any source we can index, or a VCS/manifest marker. Every supported language needs a
     # marker here: Ruby support was added without one, so a Rails app with no .git
     # directory was silently passed over by a fleet sweep.
@@ -242,6 +260,14 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
     base_dir = Path(base_dir).resolve()
     repos = sorted(d for d in base_dir.iterdir() if _looks_like_repo(d))
     ok, failed = [], []
+    # Rulebooks are collected across the whole sweep and ingested once at the end. A sweep
+    # has seen every rulebook there is, so it is the only caller entitled to withdraw a rule
+    # that has disappeared.
+    books = [root for repo in repos for root in guidance_roots(repo)]
+    # A repo that declares only rules has nothing to index, so counting it among the repos
+    # considered would report a rulebook as a repository the sweep failed to index.
+    rulebooks_only = [d for d in repos if guidance_roots(d) and not resolve_services(d)]
+    repos = [d for d in repos if d not in rulebooks_only]
 
     def extract(repo: Path) -> tuple:
         """(repo, extracted-services, error). Runs on a worker; touches no store."""
@@ -270,12 +296,22 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
             for r in rs:
                 progress("repo-done", r)
 
+    def finish() -> dict:
+        ok.sort(key=lambda s: s["slug"])
+        failed.sort()
+        out = {"ok": ok, "failed": failed, "considered": len(repos),
+               "rulebooks": len(rulebooks_only)}
+        if books:
+            from .guidance import ingest_roots
+            out["guidance"] = ingest_roots(store, books, replace=True)
+        return out
+
     if jobs <= 1:
         for i, repo in enumerate(repos, 1):
             if progress:
                 progress("repo", {"i": i, "n": len(repos), "slug": repo.name})
             absorb(*extract(repo))
-        return {"ok": ok, "failed": failed, "considered": len(repos)}
+        return finish()
 
     done = 0
     with ThreadPoolExecutor(max_workers=jobs) as pool:
@@ -294,6 +330,4 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
             absorb(repo, extracted, err)
 
     # Summaries in repository order, so the printed report reads the same either way.
-    ok.sort(key=lambda s: s["slug"])
-    failed.sort()
-    return {"ok": ok, "failed": failed, "considered": len(repos)}
+    return finish()

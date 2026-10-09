@@ -266,6 +266,13 @@ def _cmd_index(args) -> int:
     finally:
         store.close()
     for s in results:
+        if s.get("guidance"):
+            g = s["guidance"]
+            print(f"fl index: {s['slug']} -> {args.db}  ({g['loaded']} guidance rules; "
+                  f"declared in fleetlens.yaml, so no service node and no symbols)")
+            for problem in g["problems"]:
+                print(f"  {problem}", file=sys.stderr)
+            continue
         if s.get("library"):
             print(f"fl index: {s['slug']} -> {args.db}  "
                   f"({s['nodes']} symbols, {s['edges']} calls; library, so no service "
@@ -322,6 +329,7 @@ def _cmd_index_all(args) -> int:
     print(f"fl index-all: {len(res['ok'])}/{res['considered']} indexed into {args.db} "
           f"({len(res['failed'])} skipped{note}) | {r['edges']} cross-repo edges "
           f"({r['async_edges']} async)")
+    _guidance_report(res.get("guidance"), "fl index-all")
     if partial:
         print(f"  {partial} repo(s) indexed without a call graph, so get_callers/get_callees "
               f"will be empty for them. Run `fl doctor <repo>` to see why.", file=sys.stderr)
@@ -340,10 +348,22 @@ def _cmd_ingest_guidance(args) -> int:
     finally:
         store.close()
 
-    print(f"fl ingest-guidance: {r['loaded']} rules loaded"
-          + (f", {r['removed']} withdrawn" if r["removed"] else ""))
+    if not r["roots"]:
+        print(f"fl ingest-guidance: no rulebook under {args.directory}.\n"
+              "  A repo holds rules when its fleetlens.yaml declares "
+              "`guidance: [{path: ...}]`,\n"
+              "  and a rule file declares `kind: guidance` in its frontmatter.",
+              file=sys.stderr)
+        return 1
+    print(f"fl ingest-guidance: {r['loaded']} rules from "
+          f"{len(r['roots'])} rulebook(s)"
+          + (f", {r['removed']} withdrawn" if r["removed"] else "")
+          + f" — {r['edges']} edges to {r['services']} services")
     for gid in r["ids"]:
         print(f"  {gid}")
+    if r.get("violations"):
+        print(f"fl ingest-guidance: {r['violations']} service(s) declare something a "
+              f"mandatory rule forbids")
     # Printed last and to stderr, because a run that loaded fourteen rules and skipped one is
     # a success with a problem in it, not a failure, and the problem must not scroll away.
     if r["problems"]:
@@ -351,6 +371,21 @@ def _cmd_ingest_guidance(args) -> int:
         for problem in r["problems"]:
             print(f"  {problem}", file=sys.stderr)
     return 0 if r["loaded"] or not r["problems"] else 1
+
+
+def _guidance_report(g: dict, cmd: str) -> None:
+    """One line for the rules a sweep picked up, and every problem on stderr."""
+    if not g:
+        return
+    print(f"{cmd}: {g['loaded']} guidance rules from {len(g.get('roots', []) or [])} "
+          f"rulebook(s)" + (f", {g['removed']} withdrawn" if g.get("removed") else "")
+          + (f" — {g['edges']} edges to {g['services']} services"
+             if g.get("edges") else ""))
+    if g.get("violations"):
+        print(f"{cmd}: {g['violations']} service(s) declare something a mandatory rule "
+              f"forbids — `find_guidance_violations` has the detail")
+    for problem in g.get("problems", []):
+        print(f"  {problem}", file=sys.stderr)
 
 
 def _cmd_resolve(args) -> int:
