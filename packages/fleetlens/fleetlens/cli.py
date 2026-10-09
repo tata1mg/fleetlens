@@ -328,6 +328,31 @@ def _cmd_index_all(args) -> int:
     return 0
 
 
+def _cmd_ingest_guidance(args) -> int:
+    from .guidance import GuidanceError, ingest
+
+    store = SqliteStore(args.db)
+    try:
+        r = ingest(store, args.directory)
+    except GuidanceError as exc:
+        print(f"fl ingest-guidance: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        store.close()
+
+    print(f"fl ingest-guidance: {r['loaded']} rules loaded"
+          + (f", {r['removed']} withdrawn" if r["removed"] else ""))
+    for gid in r["ids"]:
+        print(f"  {gid}")
+    # Printed last and to stderr, because a run that loaded fourteen rules and skipped one is
+    # a success with a problem in it, not a failure, and the problem must not scroll away.
+    if r["problems"]:
+        print(f"\n{len(r['problems'])} file(s) skipped:", file=sys.stderr)
+        for problem in r["problems"]:
+            print(f"  {problem}", file=sys.stderr)
+    return 0 if r["loaded"] or not r["problems"] else 1
+
+
 def _cmd_resolve(args) -> int:
     store = SqliteStore(args.db)
     try:
@@ -511,6 +536,13 @@ def main(argv: list[str] | None = None) -> int:
                         "external indexer processes, so this scales well past the core count")
     _llm_args(p, with_embed=False)
     p.set_defaults(func=_cmd_index_all)
+
+    p = sub.add_parser("ingest-guidance",
+                       help="load human-authored engineering guidance from a directory "
+                            "of Markdown rules")
+    p.add_argument("directory", help="directory of Markdown rules, one rule per file")
+    p.add_argument("--db", default=_DEFAULT_DB)
+    p.set_defaults(func=_cmd_ingest_guidance)
 
     p = sub.add_parser("resolve", help="(re)compute cross-repo service->service edges")
     p.add_argument("--db", default=_DEFAULT_DB)
