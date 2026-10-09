@@ -210,6 +210,7 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
             "SELECT MAX(updated_at) FROM knowledge_objects").fetchone()[0]
         edges = self._conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
         info = {"indexed_at": built, "services": counts.get("service", 0),
+                "libraries": counts.get("library", 0),
                 "interfaces": counts.get("interface", 0),
                 # "code_symbol", the name the call-graph loader writes. Looking up
                 # "symbol" quietly reported 0 on an index holding half a million of them,
