@@ -140,3 +140,64 @@ def test_frontmatter_nested_too_deep_is_refused(tmp_path):
     text = "---\nid: x\ntitle: X\napplies_to:\n  dependencies:\n      nested: [a]\n---\n\nb\n"
     with pytest.raises(GuidanceError, match="nests deeper"):
         read_file(_write(tmp_path, "deep.md", text))
+
+
+# --- embedding and the MCP tools -------------------------------------------------------
+
+
+class FakeEmbedder:
+    model = "fake-embed"
+
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, texts):
+        self.calls += 1
+        return [[float(len(t)), float(t.count("cache"))] for t in texts]
+
+
+def test_guidance_is_embedded_as_written_not_paraphrased(tmp_path):
+    """No LLM: a rule arrives already written by the person who meant it."""
+    from fleetlens.guidance import embed_guidance
+
+    _write(tmp_path, "cache.md", GOOD)
+    store = SqliteStore(":memory:")
+    ingest(store, tmp_path)
+    r = embed_guidance(store, FakeEmbedder())
+    assert r["embedded"] == 1
+    stored = store._conn.execute(
+        "SELECT summary FROM enrichments WHERE object_type='guidance'").fetchone()[0]
+    assert stored == store.get("guidance:cache-access").summary
+
+
+def test_embedding_is_gated_on_the_content_hash(tmp_path):
+    from fleetlens.guidance import embed_guidance
+
+    p = _write(tmp_path, "cache.md", GOOD)
+    store = SqliteStore(":memory:")
+    ingest(store, tmp_path)
+    emb = FakeEmbedder()
+    assert embed_guidance(store, emb)["embedded"] == 1
+    assert embed_guidance(store, emb)["skipped"] == 1          # unchanged, no work
+
+    p.write_text(GOOD.replace("Do not import", "Never import"))
+    ingest(store, tmp_path)
+    assert embed_guidance(store, emb)["embedded"] == 1         # edited, re-embedded
+
+
+def test_the_server_says_guidance_exists_only_when_it_does(tmp_path):
+    from fleetlens.cli import _guidance_instructions
+    from fleetlens.server.app import build_context
+
+    db = tmp_path / "x.db"
+    store = SqliteStore(str(db))
+    store.commit()
+    store.close()
+    ctx = build_context(str(db))
+    assert _guidance_instructions(ctx) == ""
+
+    _write(tmp_path, "cache.md", GOOD)
+    ingest(ctx.store, tmp_path)
+    said = _guidance_instructions(ctx)
+    assert "get_engineering_guidance" in said and "1 rules" in said
+    ctx.close()

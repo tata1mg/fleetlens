@@ -9,6 +9,9 @@ migrating, the majority pattern is precisely the one they are moving away from.
 So guidance is stored with `source="authored"` and every response that carries it says so,
 along with when a human last reviewed it. A claim is never handed over looking like evidence.
 """
+from .embed import embed_guidance
+from .link import governing, link, violations
 from .load import GuidanceError, ingest, load_guidance
 
-__all__ = ["GuidanceError", "load_guidance", "ingest"]
+__all__ = ["GuidanceError", "load_guidance", "ingest", "link", "governing",
+           "violations", "embed_guidance"]

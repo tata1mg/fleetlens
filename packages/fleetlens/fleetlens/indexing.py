@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from .adapters import registry as iface_registry
+from .adapters.deps import declared_dependencies
 from .adapters.hosts import config_hosts, service_identity
 from .adapters.outbound import discover_outbound as _py_outbound
 from .adapters.ruby_outbound import discover_outbound as _rb_outbound
@@ -120,6 +121,12 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
                         for c in calls]
             # Service addresses this repo declares in config. Generic twelve-factor
             # convention; which service each address denotes is decided by the resolvers.
+            # Declared dependencies, for matching a service against authored guidance. Read
+            # from the manifest rather than from import sites: a manifest names packages in a
+            # global namespace, and some ecosystems barely import their dependencies by name.
+            with tick("declared dependencies"):
+                dependencies = declared_dependencies(root)
+
             with tick("config hosts + identity"):
                 host_bindings = [{"key": b.key, "host": b.host, "port": b.port,
                                   "value": b.value, "file": b.file} for b in config_hosts(root)]
@@ -135,7 +142,7 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
         + [asdict(sk) for sk in skipped_out]
     return {"slug": slug, "root": root, "spec": spec, "outbound": outbound,
             "host_bindings": host_bindings, "identity": identity, "skipped": skipped,
-            "call_graph_ok": call_graph_ok}
+            "dependencies": dependencies, "call_graph_ok": call_graph_ok}
 
 
 def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats=None) -> dict:
@@ -167,7 +174,8 @@ def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats
                  "interface_count": iface_summary.get("interfaces", 0),
                  "outbound": x["outbound"], "host_bindings": x["host_bindings"],
                  "declared_hosts": dict(spec.hosts or {}), "identity": x["identity"],
-                 "root": str(root), "skipped": x["skipped"]}))
+                 "root": str(root), "skipped": x["skipped"],
+                 "dependencies": x.get("dependencies", [])}))
     store.commit()
 
     summary["slug"] = slug

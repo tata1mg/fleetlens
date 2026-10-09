@@ -380,8 +380,9 @@ def _cmd_enrich(args) -> int:
     from .enrich.providers import ProviderError
 
     kinds = tuple(k.strip() for k in args.kinds.split(",") if k.strip())
-    summary_kinds = tuple(k for k in kinds if k != "gaps")
-    built = _build_llm(args, "fl enrich", need_embed=bool(summary_kinds))
+    summary_kinds = tuple(k for k in kinds if k not in ("gaps", "guidance"))
+    built = _build_llm(args, "fl enrich",
+                       need_embed=bool(summary_kinds) or "guidance" in kinds)
     if built is None:
         return 2
     llm, embedder = built
@@ -398,6 +399,13 @@ def _cmd_enrich(args) -> int:
                 r = resolve(store, store, store)
                 print(f"fl enrich: re-resolved fleet — {r['edges']} service->service edges "
                       f"({r['async_edges']} async)")
+        if "guidance" in kinds:
+            # No LLM call: a rule arrives already written by the person who meant it, so it
+            # is embedded as authored rather than paraphrased.
+            from .guidance import embed_guidance
+            g = embed_guidance(store, embedder)
+            print(f"fl enrich: guidance — {g['embedded']} embedded, "
+                  f"{g['skipped']} unchanged ({g['model']})")
         if summary_kinds:
             eprog = _enrich_printer()
             try:
@@ -425,6 +433,27 @@ def _cmd_doctor(args) -> int:
     rep = run(Path(args.repo) if args.repo else None, args.base_url or "http://localhost:11434")
     print(render(rep))
     return 1 if rep.failed else 0
+
+
+def _guidance_instructions(ctx) -> str:
+    """The line about engineering guidance, or nothing when none is ingested.
+
+    Said here rather than left to the tool's own description, because an agent that does not
+    know fleet-wide standards exist will not go looking for them: it will read the
+    repositories and infer conventions, which during a migration means inferring the one
+    being migrated away from.
+    """
+    try:
+        rules = ctx.store.list_objects("guidance")
+    except Exception:       # noqa: BLE001 - instructions must never fail a server start
+        return ""
+    if not rules:
+        return ""
+    return ("\n\nThis fleet also carries human-authored engineering standards: which "
+            f"libraries, frameworks and patterns to use when writing code here ({len(rules)} "
+            "rules). Call `get_engineering_guidance` BEFORE writing or reviewing code in "
+            "these repositories. Conventions inferred by reading the fleet are the EXISTING "
+            "conventions, which are not always the intended ones.")
 
 
 def _cmd_serve(args) -> int:
@@ -492,7 +521,8 @@ def _cmd_serve(args) -> int:
         "`get_callers`/`get_callees` for blast radius.\n\n"
         "Prefer these over grepping the repositories: grep cannot see across repository "
         "boundaries, and a confident guess about a service boundary is indistinguishable "
-        "from a fact. Every answer here carries evidence and a confidence label."))
+        "from a fact. Every answer here carries evidence and a confidence label."
+        + _guidance_instructions(ctx)))
     register_all(mcp, ctx)
 
     if args.http:
@@ -558,6 +588,7 @@ def main(argv: list[str] | None = None) -> int:
     _llm_args(p, with_embed=True)
     p.add_argument("--kinds", default="interface,service",
                    help="comma list of: interface, service (summaries+embeddings), "
+                        "guidance (embed authored rules; no LLM), "
                         "gaps (LLM-resolve sites the parsers could not; grounded, no embeddings)")
     p.add_argument("--service", default="",
                    help="limit to one service slug, for every kind")

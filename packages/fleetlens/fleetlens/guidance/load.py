@@ -88,10 +88,10 @@ def _require(meta: dict, field: str, where: Path) -> str:
     return value.strip()
 
 
-def _applies_to(meta: dict, where: Path) -> dict:
-    raw = meta.get("applies_to") or {}
+def _block(meta: dict, field: str, where: Path) -> dict:
+    raw = meta.get(field) or {}
     if not isinstance(raw, dict):
-        raise GuidanceError(f"{where}: `applies_to` must be a block of key: [values]")
+        raise GuidanceError(f"{where}: `{field}` must be a block of key: [values]")
     out = {}
     for key, value in raw.items():
         out[key] = [value] if isinstance(value, str) else list(value or [])
@@ -135,7 +135,10 @@ def read_file(path: Path) -> KnowledgeObject:
     payload = {
         "status": status,
         "scope": scope,
-        "applies_to": _applies_to(meta, path),
+        "applies_to": _block(meta, "applies_to", path),
+        # What a service must NOT declare under this rule. Only meaningful on a mandatory
+        # rule, and the match is a package name in a manifest, so a finding is checkable.
+        "forbids": _block(meta, "forbids", path),
         "reviewed": reviewed,
         "owner": str(meta.get("owner", "")).strip(),
         "file": path.name,
@@ -204,5 +207,9 @@ def ingest(store, directory: str | Path) -> dict:
     for stale in sorted(before - kept):
         removed += store.delete_objects_by_id_prefix(stale)
     store.commit()
+    # Relink straight away. Guidance that is stored but unlinked answers nothing, and the
+    # join is milliseconds, so there is no reason to make it a second command to forget.
+    from .link import link
+    linked = link(store)
     return {"loaded": len(objs), "removed": removed, "problems": problems,
-            "ids": sorted(o.object_id for o in objs)}
+            "ids": sorted(o.object_id for o in objs), **linked}
