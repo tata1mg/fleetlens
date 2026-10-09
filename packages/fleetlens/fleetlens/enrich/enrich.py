@@ -1,6 +1,6 @@
 """Enrichment producer — LLM capability summaries + embeddings for semantic discovery.
 
-Opt-in, off the hot path. For each interface/service it:
+Opt-in, off the hot path. For each interface, service and library it:
   1. builds a small grounding string + a content hash of it,
   2. skips if an enrichment with that hash already exists (gating — only new/changed work),
   3. generates a one-line summary (LLM, output-capped),
@@ -22,6 +22,14 @@ _IFACE_SYS = "You write terse, one-sentence descriptions of what an API endpoint
 _SVC_SYS = ("You describe what a microservice is responsible for, in plain prose, for an "
             "engineer who has never seen it. Cover the distinct areas of functionality it "
             "owns. Use only what you are given; do not invent capabilities.")
+_LIB_SYS = ("You describe what a shared code library provides, in plain prose, for an "
+            "engineer deciding whether to reuse it instead of writing their own. Cover the "
+            "distinct capabilities it offers. Use only what you are given; do not invent "
+            "capabilities.")
+_SYSTEM = {"interface": _IFACE_SYS, "service": _SVC_SYS, "library": _LIB_SYS}
+#: Every kind, in the order they must run: a service's prompt reads its endpoints'
+#: summaries, so endpoints go first whatever order the caller listed them in.
+KINDS = ("interface", "service", "library")
 
 #: Output budget per summary, by kind.
 #:
@@ -33,6 +41,7 @@ _SVC_SYS = ("You describe what a microservice is responsible for, in plain prose
 TOKENS = {
     "interface": int(os.environ.get("FLEETLENS_SUMMARY_TOKENS_INTERFACE", "48")),
     "service": int(os.environ.get("FLEETLENS_SUMMARY_TOKENS_SERVICE", "350")),
+    "library": int(os.environ.get("FLEETLENS_SUMMARY_TOKENS_LIBRARY", "300")),
 }
 #: Hard cap on stored text, in characters, after generation. Roughly four characters per
 #: token with headroom, so it bounds a runaway model without truncating a complete answer.
@@ -54,6 +63,9 @@ README_CHARS = int(os.environ.get("FLEETLENS_SUMMARY_README_CHARS", "1500"))
 #: Exported symbols to list when a service has no endpoints and no queues. A library's
 #: public functions are its interface; without this its summary is written from a slug.
 SVC_SYMBOLS = int(os.environ.get("FLEETLENS_SUMMARY_SYMBOLS", "40"))
+#: Exported symbols to list for a library. Higher than for a service, because for a library
+#: they are the whole of the observed surface rather than a fallback for a missing one.
+LIB_SYMBOLS = int(os.environ.get("FLEETLENS_SUMMARY_LIB_SYMBOLS", "80"))
 
 
 def _hash(*parts: str) -> str:
@@ -170,6 +182,16 @@ def _exported(knowledge: KnowledgeStore, slug: str, limit: int) -> tuple[list[st
     return picked, mods
 
 
+def _names(exported: list[str]) -> list[str]:
+    """The symbol names from `_exported` lines, for a content hash.
+
+    The lines are indented, so splitting on a single space put an empty string first and
+    the hash never saw a single name: adding or removing a public function left the summary
+    as it was.
+    """
+    return [e.split()[0] for e in exported if e.strip()]
+
+
 def _dependents(knowledge, obj) -> list[str]:
     """Services that call or publish to this one. Derived, so it never goes stale.
 
@@ -277,8 +299,52 @@ def _svc_ground(obj, knowledge: KnowledgeStore, semantic=None) -> tuple[str, str
     # claims_hash is in the hash so that editing a README re-summarises that one service.
     return ("\n".join(prompt),
             _hash(slug, *sorted(shape), *outbound, *queues, *dependents,
-                  *(e.split(" ")[0] for e in exported), claims_hash),
+                  *_names(exported), claims_hash),
             vocab)
+
+
+def _lib_ground(obj, knowledge: KnowledgeStore) -> tuple[str, str, str]:
+    """Prompt and content hash for one library.
+
+    A library has no endpoints, queues or outbound calls, so it is described by what it
+    exports, next to what its README and manifest claim it is for. Both come from the same
+    helpers the service prompt uses for a service with no routes; only the framing differs,
+    because the reader is deciding whether to reuse this code, not whether to call it.
+    """
+    slug = obj.object_id
+    claims, claims_hash = declared(obj.payload.get("root", ""), README_CHARS)
+    exported, modules = _exported(knowledge, slug, LIB_SYMBOLS)
+
+    prompt = [f"Library: {slug}"]
+    if claims:
+        prompt += [""] + claims
+    prompt += ["", "Observed surface, extracted from source this run:"]
+    if exported:
+        prompt += ["", "Public code it exports:"] + exported
+    if modules:
+        prompt += ["", "Top-level modules: " + ", ".join(modules)]
+    if not exported:
+        prompt += ["", "  (nothing discovered)"]
+    prompt += ["",
+               "Describe what this library provides. Cover each distinct capability above, "
+               "not just the first few. Name the domain concepts and the problems it "
+               "solves, in the words an engineer would search for. Plain prose, no "
+               "preamble, no closing summary paragraph, and nothing that is not supported "
+               "by what you were given. Where the declared purpose and the observed "
+               "surface disagree, follow the observed surface."]
+    # Module names are the vocabulary a summary will not fully contain, so they ride along
+    # in the embedded text the way endpoint paths do for a service.
+    return ("\n".join(prompt),
+            _hash(slug, *_names(exported), claims_hash),
+            " ".join(modules))
+
+
+def _ground(kind: str, obj, knowledge: KnowledgeStore, semantic) -> tuple[str, str, str]:
+    if kind == "interface":
+        return _iface_ground(obj)
+    if kind == "library":
+        return _lib_ground(obj, knowledge)
+    return _svc_ground(obj, knowledge, semantic)
 
 
 _SENTENCE_END = (". ", ".\n", "! ", "? ", ".", "!", "?")
@@ -321,7 +387,7 @@ def _embed_text(obj, kind: str, summary: str, vocab: str = "") -> str:
 
 def _summarise(llm: LLMProvider, kind: str, prompt: str) -> str:
     """One summary. Pure with respect to the store, so it is safe to run on a worker."""
-    system = _IFACE_SYS if kind == "interface" else _SVC_SYS
+    system = _SYSTEM.get(kind, _SVC_SYS)
     summary = llm.complete(prompt, system=system, max_tokens=TOKENS.get(kind, 48)).strip()
     # An endpoint answer is one line; a service answer is prose and may run to several, so
     # only the first line is kept where that is the shape asked for.
@@ -339,18 +405,18 @@ BATCH = int(os.environ.get("FLEETLENS_ENRICH_BATCH", "5"))
 
 
 def _owned_by(obj, kind: str, slug: str) -> bool:
-    """Whether `obj` belongs to the service `slug`.
+    """Whether `obj` belongs to the service or library `slug`.
 
-    An interface id is `interface:<slug>:<rest>`; a service's own id is its slug.
+    An interface id is `interface:<slug>:<rest>`; a service's or library's own id is its slug.
     """
-    if kind == "service":
+    if kind in ("service", "library"):
         return obj.object_id == slug
     parts = obj.id.split(":")
     return len(parts) > 1 and parts[1] == slug
 
 
 def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
-           kinds: tuple[str, ...] = ("interface", "service"), only_slug: str = "",
+           kinds: tuple[str, ...] = KINDS, only_slug: str = "",
            progress=None, jobs: int = 1) -> dict:
     """Enrich the given object kinds. `store` implements KnowledgeStore + SemanticStore.
 
@@ -391,6 +457,10 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
         batch.clear()
         return n
 
+    # Run in dependency order whatever the caller wrote. `--kinds service,interface` used to
+    # summarise every service before any endpoint had a summary, and since a service's
+    # hash does not cover those summaries, it was never redone once they existed.
+    kinds = sorted(kinds, key=lambda k: KINDS.index(k) if k in KINDS else len(KINDS))
     for kind in kinds:
         existing = semantic.enrichment_hashes(kind, model)
         objs = knowledge.list_objects(kind)
@@ -411,8 +481,7 @@ def enrich(store, llm: LLMProvider, embedder: EmbeddingProvider, *,
             """
             nonlocal skipped
             for n, obj in enumerate(objs, 1):
-                prompt, chash, vocab = (_iface_ground(obj) if kind == "interface"
-                                        else _svc_ground(obj, knowledge, semantic))
+                prompt, chash, vocab = _ground(kind, obj, knowledge, semantic)
                 if existing.get(obj.id) == chash:
                     skipped += 1
                     say("enrich", {"kind": kind, "i": n, "n": todo, "done": generated,

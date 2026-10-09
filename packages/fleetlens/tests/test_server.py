@@ -43,7 +43,7 @@ def test_semantic_tools_registered_only_with_an_embedder():
     ctx = build_context(":memory:", embedder=FakeEmbedder())
     m = _FakeMCP()
     register_all(m, ctx)
-    assert {"discover_interfaces", "discover_services"} <= set(m.tools)
+    assert {"discover_interfaces", "discover_services", "discover_libraries"} <= set(m.tools)
 
 
 def test_tools_route_to_service():

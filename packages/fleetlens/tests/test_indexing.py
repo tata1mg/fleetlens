@@ -214,3 +214,22 @@ def test_each_repo_prints_a_line_as_it_finishes(capsys):
     prog("repo-failed", {"slug": "billing", "error": "no manifest"})
     end = capsys.readouterr()
     assert "no manifest" in end.err and end.out == ""    # failures on stderr, as before
+
+
+def test_a_library_is_indexed_as_a_library_not_a_service(tmp_path, monkeypatch):
+    """A library gets an object of its own type, so enrichment and semantic search can
+    reach it, while every reading of the service graph still leaves it out."""
+    from fleetlens import indexing
+
+    (tmp_path / "fleetlens.yaml").write_text('libraries:\n  - path: "."\n')
+    (tmp_path / "retry.py").write_text("def retry_with_backoff():\n    pass\n")
+    monkeypatch.setattr(indexing.cg_cli, "main", lambda *a, **kw: 0)
+
+    store = SqliteStore(":memory:")
+    indexing.index_repo(tmp_path, store)
+
+    assert store.list_objects("service") == []
+    libs = store.list_objects("library")
+    assert [lib.object_id for lib in libs] == [tmp_path.name]
+    assert libs[0].payload["root"] == str(tmp_path.resolve())
+    assert store.index_info()["libraries"] == 1

@@ -36,3 +36,13 @@ def register(mcp, ctx: ServiceContext) -> None:
         LLM-generated service summaries (needs the enrichment tier). Returns service ids +
         summaries + scores."""
         return ctx.discovery.discover(query, "service", _limit(limit))
+
+    @mcp.tool()
+    @offloaded
+    def discover_libraries(query: str, limit: int = 5) -> dict:
+        """Find shared code libraries by what they provide, in natural language, e.g. "retry
+        with exponential backoff" or "parsing feature-flag config". Use before writing a
+        helper that may already exist. Ranked semantic search over LLM-generated library
+        summaries (needs the enrichment tier). Returns library ids + summaries + scores; use
+        find_symbol to reach the code."""
+        return ctx.discovery.discover(query, "library", _limit(limit))

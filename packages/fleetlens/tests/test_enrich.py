@@ -524,3 +524,108 @@ def test_dependents_are_named():
     s.commit()
     prompt, _, _ = _svc_ground(s.get("service:shop"), s, s)
     assert "Depended on by: checkout" in prompt
+
+
+# --- libraries -----------------------------------------------------------------------
+
+
+def _lib(slug, root=""):
+    return KnowledgeObject("library", slug, slug, None, "unknown", "static", "index",
+                           None, None, {"root": root})
+
+
+def _store_with_libs():
+    s = SqliteStore(":memory:")
+    s.upsert_object(_lib("mailer"))
+    s.upsert_object(_symbol("mailer", "mailer/email/send.py", "send_templated"))
+    s.upsert_object(_lib("ledger"))
+    s.upsert_object(_symbol("ledger", "ledger/billing/invoice.py", "Invoice", kind="class"))
+    s.commit()
+    return s
+
+
+def test_a_library_is_grounded_in_its_readme_and_exported_code(tmp_path):
+    from fleetlens.enrich.enrich import _lib_ground
+
+    (tmp_path / "README.md").write_text("# retrylib\n\nRetries flaky network calls.\n")
+    s = SqliteStore(":memory:")
+    s.upsert_object(_lib("retrylib", str(tmp_path)))
+    for name in ("CircuitBreaker", "retry_with_backoff", "_private_helper"):
+        s.upsert_object(_symbol("retrylib", "retrylib/resilience.py", name))
+    s.commit()
+    prompt, _, vocab = _lib_ground(s.get("library:retrylib"), s)
+    assert prompt.startswith("Library: retrylib")
+    assert "Retries flaky network calls" in prompt and "Declared purpose" in prompt
+    assert "CircuitBreaker" in prompt and "retry_with_backoff" in prompt
+    assert prompt.index("CircuitBreaker") < prompt.index("_private_helper")
+    assert "retrylib" in vocab
+
+
+def test_adding_a_public_symbol_re_summarises_a_library():
+    """The content hash must see the exported names, or a library that grows a new
+    capability keeps describing itself without it."""
+    from fleetlens.enrich.enrich import _lib_ground
+
+    s = _store_with_libs()
+    _, h1, _ = _lib_ground(s.get("library:mailer"), s)
+    s.upsert_object(_symbol("mailer", "mailer/email/sms.py", "send_sms"))
+    s.commit()
+    _, h2, _ = _lib_ground(s.get("library:mailer"), s)
+    assert h2 != h1
+
+
+def test_renaming_a_public_symbol_re_summarises_a_service_without_routes():
+    """Same rule for a routeless service, which is grounded in the same exported names.
+    The names were split off an indented line, so the hash used to see one blank per
+    symbol: a count, not the names. Renaming keeps the count, so only this catches it."""
+    from fleetlens.enrich.enrich import _svc_ground
+
+    s = SqliteStore(":memory:")
+    s.upsert_object(_svc("worker"))
+    s.upsert_object(_symbol("worker", "worker/jobs.py", "reconcile"))
+    s.commit()
+    _, h1, _ = _svc_ground(s.get("service:worker"), s, s)
+    s.delete_objects_by_id_prefix("code_symbol:worker:")
+    s.upsert_object(_symbol("worker", "worker/jobs.py", "expire_carts"))
+    s.commit()
+    _, h2, _ = _svc_ground(s.get("service:worker"), s, s)
+    assert h2 != h1
+
+
+def test_libraries_are_enriched_gated_and_found_by_meaning():
+    s = _store_with_libs()
+    llm = FakeLLM()
+    r1 = enrich(s, llm, FakeEmbedder(), kinds=("library",))
+    assert r1["generated"] == 2
+    r2 = enrich(s, llm, FakeEmbedder(), kinds=("library",))
+    assert r2["generated"] == 0 and r2["skipped"] == 2
+
+    res = DiscoveryService(s, s, FakeEmbedder()).discover("email", "library", limit=2)
+    assert res["status"] == "ok"
+    assert res["results"][0]["id"] == "library:mailer"
+
+
+def test_libraries_are_enriched_by_default_and_never_as_services():
+    s = _store_with_libs()
+    enrich(s, FakeLLM(), FakeEmbedder())
+    assert set(s.enrichment_hashes("library", "fake-embed")) == {"library:mailer",
+                                                                 "library:ledger"}
+    assert s.enrichment_hashes("service", "fake-embed") == {}
+
+
+def test_kinds_run_in_dependency_order_whatever_the_caller_wrote():
+    """A service prompt reads its endpoints' summaries, so `service,interface` must still
+    summarise the endpoints first."""
+    class Recording(FakeLLM):
+        def __init__(self):
+            super().__init__()
+            self.order = []
+
+        def complete(self, prompt, *, system=None, max_tokens=64):
+            self.order.append(prompt.splitlines()[0].split(":")[0])
+            return super().complete(prompt, system=system, max_tokens=max_tokens)
+
+    s = _store_with_ifaces()
+    llm = Recording()
+    enrich(s, llm, FakeEmbedder(), kinds=("service", "interface"))
+    assert llm.order == ["Endpoint", "Endpoint", "Service"]
