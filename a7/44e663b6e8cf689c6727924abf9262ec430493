@@ -1,0 +1,45 @@
+packages/fleetlens/fleetlens/server/tools/guidance.py
+  s_d5ea2fae8a9c21::t_d4f21a083e26e5 1-101
+packages/fleetlens/fleetlens/guidance/link.py
+  s_d5ea2fae8a9c21::t_09406ae2a337d0 1-127
+packages/fleetlens/tests/test_guidance.py
+  s_d5ea2fae8a9c21::t_b2f56b139286f1 143-203
+packages/fleetlens/fleetlens/adapters/deps.py
+  s_d5ea2fae8a9c21::t_e9dc60e6f1e83d 30-31,39-58,60-63,116-141,143-154,231-232
+  s_d5ea2fae8a9c21::t_f0b837daec9288 1-26,28-29,32-38,59,69-86,193-230,235,237-241
+  s_d5ea2fae8a9c21::t_72c56a0a39bc53 87-115,142
+  s_d5ea2fae8a9c21::t_b58575e250103f 27,64-68,155-192,233-234,236
+packages/fleetlens/fleetlens/indexing.py
+  s_d5ea2fae8a9c21::t_9354933904d7af 124-129,145
+  s_d5ea2fae8a9c21::t_d01388b0735b62 16,177-178
+packages/fleetlens/fleetlens/guidance/__init__.py
+  s_d5ea2fae8a9c21::t_cd3e81577cfc5c 13,16
+  s_d5ea2fae8a9c21::t_5cf9daeddea96b 12,17
+packages/fleetlens/fleetlens/guidance/load.py
+  s_d5ea2fae8a9c21::t_cd3e81577cfc5c 91-92,94,138-141,210-213,215
+packages/fleetlens/fleetlens/guidance/embed.py
+  s_d5ea2fae8a9c21::t_5cf9daeddea96b 1-47
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_f42c61949f3e4d 383,402-408,438-458,524-525,591
+  s_d5ea2fae8a9c21::t_60ff0e17fb5bae 384-385
+packages/fleetlens/fleetlens/server/tools/__init__.py
+  s_d5ea2fae8a9c21::t_d4f21a083e26e5 2,4
+packages/fleetlens/tests/test_guidance_link.py
+  s_d5ea2fae8a9c21::t_1cc2d0f3d9fa10 1-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a744e663b6e8cf689c6727924abf9262ec430493",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
