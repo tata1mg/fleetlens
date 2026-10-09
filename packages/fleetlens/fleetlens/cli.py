@@ -352,9 +352,16 @@ def _cmd_export_graph(args) -> int:
 
 def _cmd_enrich(args) -> int:
     from .enrich import enrich, fill_gaps
+    from .enrich.enrich import KINDS
     from .enrich.providers import ProviderError
 
     kinds = tuple(k.strip() for k in args.kinds.split(",") if k.strip())
+    unknown = [k for k in kinds if k not in (*KINDS, "gaps")]
+    if unknown:
+        # An unknown kind lists no objects, so the run would succeed having done nothing.
+        print(f"fl enrich: unknown kind(s) {', '.join(unknown)}; choose from "
+              f"{', '.join(KINDS)}, gaps", file=sys.stderr)
+        return 2
     summary_kinds = tuple(k for k in kinds if k != "gaps")
     built = _build_llm(args, "fl enrich", need_embed=bool(summary_kinds))
     if built is None:
@@ -524,11 +531,11 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("enrich", help="optional LLM tier: summaries + embeddings, or gap-filling (opt-in)")
     p.add_argument("--db", default=_DEFAULT_DB)
     _llm_args(p, with_embed=True)
-    p.add_argument("--kinds", default="interface,service",
-                   help="comma list of: interface, service (summaries+embeddings), "
+    p.add_argument("--kinds", default="interface,service,library",
+                   help="comma list of: interface, service, library (summaries+embeddings), "
                         "gaps (LLM-resolve sites the parsers could not; grounded, no embeddings)")
     p.add_argument("--service", default="",
-                   help="limit to one service slug, for every kind")
+                   help="limit to one service or library slug, for every kind")
     p.add_argument("--jobs", "-j", type=int, default=1, metavar="N",
                    help="summarise N objects at once. For a remote provider most of the "
                         "time per object is a round trip, so this scales well; for a local "

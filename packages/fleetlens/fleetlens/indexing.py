@@ -154,6 +154,13 @@ def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats
         # Its code is in the index and `find_symbol` reaches it, but it is not a node in the
         # mesh: nothing calls a shared package over the network, and listing it as a service
         # would inflate the service count and make it read as an endpoint-less service.
+        # It still gets an object of its own type, so enrichment has something to describe
+        # and semantic search can find it; nothing that reads services ever lists it.
+        store.upsert_object(KnowledgeObject(
+            object_type="library", object_id=slug, name=slug, summary=None,
+            version="unknown", source="static", generation_strategy="index",
+            last_generated_at=None, embed_text=None,
+            payload={"symbol_count": summary["nodes"], "root": str(root)}))
         store.commit()
         summary.update(slug=slug, library=True, interfaces=0, outbound=0,
                        host_bindings=0, skipped=0,

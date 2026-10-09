@@ -105,7 +105,7 @@ fl export-graph --db fleet.db -o mesh.html   # self-contained HTML render, no se
 | `get_endpoint_call_graph` | Trace an endpoint into the code it actually runs |
 | `find_symbol` / `get_symbol` | Locate a function across the fleet |
 | `get_callers` / `get_callees` | Blast radius of a change, transitively |
-| `discover_services` / `discover_interfaces` | Natural-language search *(opt-in, needs embeddings)* |
+| `discover_services` / `discover_interfaces` / `discover_libraries` | Natural-language search *(opt-in, needs embeddings)* |
 
 ---
 
@@ -266,6 +266,10 @@ interfaces. That matters because a shared package is not something another servi
 over the network: listing one as a service invents a node nobody deploys, hands it whatever
 routes its examples and its own health blueprint happen to declare, and makes "which
 services are unused" unreadable.
+
+With the semantic tier, `fl enrich` summarises each library from its README and the code it
+exports, and `discover_libraries` finds it by what it provides ("retry with backoff"), so a
+helper that already exists turns up before someone writes it again.
 
 ### Excluding directories
 
