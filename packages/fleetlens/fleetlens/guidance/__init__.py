@@ -11,13 +11,7 @@ along with when a human last reviewed it. A claim is never handed over looking l
 """
 from .embed import embed_guidance
 from .link import governing, link, violations
-from .load import (
-    GuidanceError,
-    guidance_dirs,
-    ingest,
-    ingest_roots,
-    load_guidance,
-)
+from .load import GuidanceError, ingest_roots, load_guidance
 
-__all__ = ["GuidanceError", "load_guidance", "ingest", "link", "governing",
-           "violations", "embed_guidance", "ingest_roots", "guidance_dirs"]
+__all__ = ["GuidanceError", "load_guidance", "ingest_roots", "link", "governing",
+           "violations", "embed_guidance"]

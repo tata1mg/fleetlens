@@ -268,8 +268,9 @@ def _cmd_index(args) -> int:
     for s in results:
         if s.get("guidance"):
             g = s["guidance"]
-            print(f"fl index: {s['slug']} -> {args.db}  ({g['loaded']} guidance rules; "
-                  f"declared in fleetlens.yaml, so no service node and no symbols)")
+            print(f"fl index: {s['slug']} -> {args.db}  ({g['loaded']} guidance rules"
+                  + (f", {g['removed']} withdrawn" if g.get("removed") else "")
+                  + "; declared in fleetlens.yaml, so no service node and no symbols)")
             for problem in g["problems"]:
                 print(f"  {problem}", file=sys.stderr)
             continue
@@ -336,51 +337,13 @@ def _cmd_index_all(args) -> int:
     return 0
 
 
-def _cmd_ingest_guidance(args) -> int:
-    from .guidance import GuidanceError, ingest
-
-    store = SqliteStore(args.db)
-    try:
-        r = ingest(store, args.directory)
-    except GuidanceError as exc:
-        print(f"fl ingest-guidance: {exc}", file=sys.stderr)
-        return 2
-    finally:
-        store.close()
-
-    if not r["roots"]:
-        print(f"fl ingest-guidance: no rulebook under {args.directory}.\n"
-              "  A repo holds rules when its fleetlens.yaml declares "
-              "`guidance: [{path: ...}]`,\n"
-              "  and a rule file declares `kind: guidance` in its frontmatter.",
-              file=sys.stderr)
-        return 1
-    print(f"fl ingest-guidance: {r['loaded']} rules from "
-          f"{len(r['roots'])} rulebook(s)"
-          + (f", {r['removed']} withdrawn" if r["removed"] else "")
-          + f" — {r['edges']} edges to {r['services']} services")
-    for gid in r["ids"]:
-        print(f"  {gid}")
-    if r.get("violations"):
-        print(f"fl ingest-guidance: {r['violations']} service(s) declare something a "
-              f"mandatory rule forbids")
-    # Printed last and to stderr, because a run that loaded fourteen rules and skipped one is
-    # a success with a problem in it, not a failure, and the problem must not scroll away.
-    if r["problems"]:
-        print(f"\n{len(r['problems'])} file(s) skipped:", file=sys.stderr)
-        for problem in r["problems"]:
-            print(f"  {problem}", file=sys.stderr)
-    return 0 if r["loaded"] or not r["problems"] else 1
-
-
 def _guidance_report(g: dict, cmd: str) -> None:
     """One line for the rules a sweep picked up, and every problem on stderr."""
     if not g:
         return
-    print(f"{cmd}: {g['loaded']} guidance rules from {len(g.get('roots', []) or [])} "
+    print(f"{cmd}: {g['loaded']} guidance rules from {len(g.get('roots') or [])} "
           f"rulebook(s)" + (f", {g['removed']} withdrawn" if g.get("removed") else "")
-          + (f" — {g['edges']} edges to {g['services']} services"
-             if g.get("edges") else ""))
+          + (f" — {g['edges']} edges to {g['services']} services" if g.get("edges") else ""))
     if g.get("violations"):
         print(f"{cmd}: {g['violations']} service(s) declare something a mandatory rule "
               f"forbids — `find_guidance_violations` has the detail")
@@ -601,13 +564,6 @@ def main(argv: list[str] | None = None) -> int:
                         "external indexer processes, so this scales well past the core count")
     _llm_args(p, with_embed=False)
     p.set_defaults(func=_cmd_index_all)
-
-    p = sub.add_parser("ingest-guidance",
-                       help="load human-authored engineering guidance from a directory "
-                            "of Markdown rules")
-    p.add_argument("directory", help="directory of Markdown rules, one rule per file")
-    p.add_argument("--db", default=_DEFAULT_DB)
-    p.set_defaults(func=_cmd_ingest_guidance)
 
     p = sub.add_parser("resolve", help="(re)compute cross-repo service->service edges")
     p.add_argument("--db", default=_DEFAULT_DB)

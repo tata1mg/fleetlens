@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pytest
-from fleetlens.guidance import GuidanceError, ingest, load_guidance
+from fleetlens.guidance import GuidanceError, ingest_roots, load_guidance
 from fleetlens.guidance.load import read_file
 from fleetlens.store.sqlite import SqliteStore
 
@@ -120,8 +120,8 @@ def test_a_missing_directory_says_so(tmp_path):
 def test_ingest_stores_and_is_idempotent(tmp_path):
     _write(tmp_path, "cache.md", GOOD)
     store = SqliteStore(":memory:")
-    first = ingest(store, tmp_path)
-    second = ingest(store, tmp_path)
+    first = ingest_roots(store, [tmp_path])
+    second = ingest_roots(store, [tmp_path])
     assert first["loaded"] == second["loaded"] == 1
     assert len(store.list_objects("guidance")) == 1
 
@@ -132,11 +132,11 @@ def test_a_withdrawn_rule_stops_being_served(tmp_path):
     _write(tmp_path, "cache.md", GOOD)
     _write(tmp_path, "other.md", "---\nkind: guidance\nid: other\ntitle: Other\n---\n\nbody\n")
     store = SqliteStore(":memory:")
-    ingest(store, tmp_path)
+    ingest_roots(store, [tmp_path])
     assert len(store.list_objects("guidance")) == 2
 
     (tmp_path / "other.md").unlink()
-    r = ingest(store, tmp_path)
+    r = ingest_roots(store, [tmp_path])
     assert r["removed"] == 1
     assert [o.object_id for o in store.list_objects("guidance")] == ["cache-access"]
 
@@ -174,7 +174,7 @@ def test_guidance_is_embedded_as_written_not_paraphrased(tmp_path):
 
     _write(tmp_path, "cache.md", GOOD)
     store = SqliteStore(":memory:")
-    ingest(store, tmp_path)
+    ingest_roots(store, [tmp_path])
     r = embed_guidance(store, FakeEmbedder())
     assert r["embedded"] == 1
     stored = store._conn.execute(
@@ -187,13 +187,13 @@ def test_embedding_is_gated_on_the_content_hash(tmp_path):
 
     p = _write(tmp_path, "cache.md", GOOD)
     store = SqliteStore(":memory:")
-    ingest(store, tmp_path)
+    ingest_roots(store, [tmp_path])
     emb = FakeEmbedder()
     assert embed_guidance(store, emb)["embedded"] == 1
     assert embed_guidance(store, emb)["skipped"] == 1          # unchanged, no work
 
     p.write_text(GOOD.replace("Do not import", "Never import"))
-    ingest(store, tmp_path)
+    ingest_roots(store, [tmp_path])
     assert embed_guidance(store, emb)["embedded"] == 1         # edited, re-embedded
 
 
@@ -209,7 +209,7 @@ def test_the_server_says_guidance_exists_only_when_it_does(tmp_path):
     assert _guidance_instructions(ctx) == ""
 
     _write(tmp_path, "cache.md", GOOD)
-    ingest(ctx.store, tmp_path)
+    ingest_roots(ctx.store, [tmp_path])
     said = _guidance_instructions(ctx)
     assert "get_engineering_guidance" in said and "1 rules" in said
     ctx.close()
@@ -220,56 +220,19 @@ def test_the_server_says_guidance_exists_only_when_it_does(tmp_path):
 GUIDANCE_MANIFEST = "guidance:\n  - path: rules\n"
 
 
-def test_a_tree_of_repositories_is_read_through_their_manifests(tmp_path):
-    """The case that matters: services, libraries and rulebooks under one parent."""
-    from fleetlens.guidance import guidance_dirs
+def test_the_manifest_is_the_only_thing_that_says_a_repo_holds_rules(tmp_path):
+    """No fallback: a folder of Markdown with no manifest is not a rulebook.
 
-    book = tmp_path / "standards"
-    (book / "rules").mkdir(parents=True)
-    (book / "fleetlens.yaml").write_text(GUIDANCE_MANIFEST)
-    _write(book / "rules", "cache.md", GOOD)
-
-    svc = tmp_path / "orders"
-    svc.mkdir()
-    (svc / "README.md").write_text("# orders\n")
-
-    lib = tmp_path / "shared"
-    lib.mkdir()
-    (lib / "fleetlens.yaml").write_text('libraries:\n  - path: "."\n')
-    (lib / "CHANGELOG.md").write_text("## 1.0\n")
-
-    assert guidance_dirs(tmp_path) == [book / "rules"]
-
-    store = SqliteStore(":memory:")
-    r = ingest(store, tmp_path)
-    assert r["loaded"] == 1
-    assert r["problems"] == []
-
-
-def test_a_repo_that_declares_guidance_is_read_directly(tmp_path):
-    from fleetlens.guidance import guidance_dirs
-
-    (tmp_path / "rules").mkdir()
-    (tmp_path / "fleetlens.yaml").write_text(GUIDANCE_MANIFEST)
-    _write(tmp_path / "rules", "cache.md", GOOD)
-    assert guidance_dirs(tmp_path) == [tmp_path / "rules"]
-
-
-def test_a_bare_directory_of_rules_still_works(tmp_path):
-    """No manifest anywhere, so the caller meant this directory."""
-    from fleetlens.guidance import guidance_dirs
+    Libraries get no no-manifest shortcut either, and a command that could bypass the
+    classifier would undermine the one thing that tells the three kinds apart.
+    """
+    from fleetlens.manifest import guidance_roots
 
     _write(tmp_path, "cache.md", GOOD)
-    assert guidance_dirs(tmp_path) == [tmp_path]
+    assert guidance_roots(tmp_path) == []
 
-
-def test_a_manifest_that_declares_no_guidance_is_an_answer(tmp_path):
-    """Not an omission to fall back from: the repo said it holds no rules."""
-    from fleetlens.guidance import guidance_dirs
-
-    (tmp_path / "fleetlens.yaml").write_text('libraries:\n  - path: "."\n')
-    _write(tmp_path, "cache.md", GOOD)
-    assert guidance_dirs(tmp_path) == []
+    (tmp_path / "fleetlens.yaml").write_text('guidance:\n  - path: "."\n')
+    assert guidance_roots(tmp_path) == [tmp_path]
 
 
 def test_a_guidance_only_repo_is_not_a_service(tmp_path):
@@ -288,10 +251,29 @@ def test_a_repo_with_both_still_yields_its_services(tmp_path):
     assert guidance_roots(tmp_path) == [tmp_path / "rules"]
 
 
-def test_ingest_without_replace_leaves_other_rulebooks_alone(tmp_path):
-    """Indexing one repository has seen one rulebook, so it withdraws nothing."""
-    from fleetlens.guidance import ingest_roots
+def test_a_rule_is_withdrawn_only_from_the_rulebook_it_came_from(tmp_path):
+    """Reading one rulebook entitles you to retire its rules and nobody else's."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    _write(a, "cache.md", GOOD)
+    _write(a, "extra.md", "---\nkind: guidance\nid: extra\ntitle: Extra\n---\n\nbody\n")
+    _write(b, "other.md", "---\nkind: guidance\nid: other\ntitle: Other\n---\n\nbody\n")
 
+    store = SqliteStore(":memory:")
+    ingest_roots(store, [a])
+    ingest_roots(store, [b])
+    assert len(store.list_objects("guidance")) == 3
+
+    # A rule deleted from rulebook a is retired when a is read again.
+    (a / "extra.md").unlink()
+    r = ingest_roots(store, [a])
+    assert r["removed"] == 1
+    assert sorted(o.object_id for o in store.list_objects("guidance")) == \
+        ["cache-access", "other"]
+
+
+def test_reading_one_rulebook_never_retires_anothers_rules(tmp_path):
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir()
     b.mkdir()
@@ -299,25 +281,31 @@ def test_ingest_without_replace_leaves_other_rulebooks_alone(tmp_path):
     _write(b, "other.md", "---\nkind: guidance\nid: other\ntitle: Other\n---\n\nbody\n")
 
     store = SqliteStore(":memory:")
-    ingest_roots(store, [a], replace=False)
-    ingest_roots(store, [b], replace=False)
+    ingest_roots(store, [a])
+    ingest_roots(store, [b])
+    # Reading only a, with b untouched on disk and never opened.
+    r = ingest_roots(store, [a])
+    assert r["removed"] == 0
     assert len(store.list_objects("guidance")) == 2
 
-    r = ingest_roots(store, [a], replace=True)
-    assert r["removed"] == 1
-    assert [o.object_id for o in store.list_objects("guidance")] == ["cache-access"]
+
+def test_every_rule_records_the_rulebook_it_came_from(tmp_path):
+    a = tmp_path / "a"
+    a.mkdir()
+    _write(a, "cache.md", GOOD)
+    store = SqliteStore(":memory:")
+    ingest_roots(store, [a])
+    assert store.get("guidance:cache-access").payload["root"] == str(a.resolve())
 
 
 def test_the_same_id_in_two_rulebooks_is_reported(tmp_path):
-    from fleetlens.guidance import ingest_roots
-
     a, b = tmp_path / "a", tmp_path / "b"
     a.mkdir()
     b.mkdir()
     _write(a, "cache.md", GOOD)
     _write(b, "cache.md", GOOD)
     store = SqliteStore(":memory:")
-    r = ingest_roots(store, [a, b], replace=True)
+    r = ingest_roots(store, [a, b])
     assert r["loaded"] == 1
     assert any("already defined in" in p for p in r["problems"])
 

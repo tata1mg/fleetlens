@@ -16,7 +16,6 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from ..manifest import find_manifest, guidance_roots
 from ..store.models import KnowledgeObject
 
 #: Accepted values for `status`. A rule that is not one of these is a typo, and a typo that
@@ -166,6 +165,9 @@ def read_file(path: Path) -> KnowledgeObject:
         "reviewed": reviewed,
         "owner": str(meta.get("owner", "")).strip(),
         "file": path.name,
+        # The rulebook this came from. Withdrawal is scoped to it, so a caller that read one
+        # rulebook can retire a rule that has gone from it without touching anyone else's.
+        "root": "",
         # The body's hash, so re-ingesting is free when nothing changed and an edit is caught
         # even when the frontmatter is untouched.
         "content_hash": hashlib.sha1(body.encode()).hexdigest()[:16],
@@ -193,7 +195,7 @@ def load_guidance(directory: str | Path) -> tuple[list[KnowledgeObject], list[st
     One bad file does not stop the rest: a typo in one rule should not take the other
     fourteen out of the index. Every problem is returned so the caller can print them all.
     """
-    root = Path(directory)
+    root = Path(directory).resolve()
     if not root.is_dir():
         raise GuidanceError(f"{root}: not a directory")
 
@@ -216,62 +218,22 @@ def load_guidance(directory: str | Path) -> tuple[list[KnowledgeObject], list[st
         if obj.object_id in seen:
             problems.append(f"{path}: id {obj.object_id!r} already used by {seen[obj.object_id]}")
             continue
+        obj.payload["root"] = str(root)
         seen[obj.object_id] = path
         objs.append(obj)
     return objs, problems
 
 
-def guidance_dirs(path: str | Path) -> list[Path]:
-    """The rule directories under `path`, honouring every repo's manifest.
-
-    Three shapes, because all three are reasonable and a fleet usually has the first:
-
-      a directory of repositories   each child's `fleetlens.yaml` says whether it holds
-                                    guidance, so services, libraries and rulebooks can share
-                                    one parent directory and still be told apart
-      one repository                its own manifest decides
-      a bare directory of rules     no manifest anywhere, so the path itself is the rulebook
-
-    The declaration is what makes the first case work. Nothing about a folder of Markdown
-    says whether it is a rulebook, a documentation site or a changelog archive.
-    """
-    root = Path(path)
-    if not root.is_dir():
-        raise GuidanceError(f"{root}: not a directory")
-
-    declared = list(guidance_roots(root))
-    if declared:
-        return declared
-
-    children: list[Path] = []
-    found_manifest = find_manifest(root) is not None
-    for child in sorted(p for p in root.iterdir() if p.is_dir()):
-        if child.name.startswith("."):
-            continue
-        if find_manifest(child) is not None:
-            found_manifest = True
-            children += guidance_roots(child)
-    if children:
-        return children
-    # A manifest exists and declares no guidance: that is an answer, not an omission, so do
-    # not fall back to scanning. Without one, the caller meant the directory itself.
-    return [] if found_manifest else [root]
-
-
-def ingest(store, directory: str | Path) -> dict:
-    """Load every rule under `directory`, replacing whatever guidance was there before."""
-    return ingest_roots(store, guidance_dirs(directory), replace=True)
-
-
-def ingest_roots(store, roots, *, replace: bool) -> dict:
+def ingest_roots(store, roots) -> dict:
     """Load the rules in `roots` into `store`.
 
-    `replace` withdraws rules that are no longer present, which is right only for a caller
-    that has seen every rulebook there is: a fleet sweep, or an explicit ingest of the
-    guidance tree. Indexing a single repository has seen one, so it adds and updates without
-    withdrawing, because a rule missing from this repo was never this repo's to withdraw.
+    Rules are withdrawn only from the rulebooks this call actually read. A rule that has
+    disappeared from a rulebook has been retired and must stop being served; a rule in some
+    other rulebook that this caller never opened is none of its business. That is what lets
+    `fl index` on one repository and `fl index-all` over a fleet share one code path with no
+    flag between them: the scope is whatever was read.
     """
-    roots = [Path(r) for r in roots]
+    roots = [Path(r).resolve() for r in roots]
     objs: list[KnowledgeObject] = []
     problems: list[str] = []
     seen_ids: dict[str, str] = {}
@@ -288,14 +250,16 @@ def ingest_roots(store, roots, *, replace: bool) -> dict:
                 continue
             seen_ids[obj.object_id] = str(root)
             objs.append(obj)
-    before = {o.id for o in store.list_objects("guidance")}
+
+    mine = {str(r) for r in roots}
+    before = {o.id: (o.payload or {}).get("root", "") for o in store.list_objects("guidance")}
     for obj in objs:
         store.upsert_object(obj)
     kept = {o.id for o in objs}
     removed = 0
-    if replace:
-        for stale in sorted(before - kept):
-            removed += store.delete_objects_by_id_prefix(stale)
+    for gid, came_from in sorted(before.items()):
+        if gid not in kept and came_from in mine:
+            removed += store.delete_objects_by_id_prefix(gid)
     store.commit()
     # Relink straight away. Guidance that is stored but unlinked answers nothing, and the
     # join is milliseconds, so there is no reason to make it a second command to forget.

@@ -80,7 +80,7 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
     roots = guidance_roots(repo)
     if roots:
         from .guidance import ingest_roots
-        r = ingest_roots(store, roots, replace=False)
+        r = ingest_roots(store, roots)
         out.append({"slug": repo.name, "guidance": r})
     return out
 
@@ -303,7 +303,7 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
                "rulebooks": len(rulebooks_only)}
         if books:
             from .guidance import ingest_roots
-            out["guidance"] = ingest_roots(store, books, replace=True)
+            out["guidance"] = ingest_roots(store, books)
         return out
 
     if jobs <= 1:
