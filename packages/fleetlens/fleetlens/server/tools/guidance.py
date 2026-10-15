@@ -19,27 +19,31 @@ from ._offload import offloaded
 PROVENANCE = ("human-authored engineering guidance, not derived from source; "
               "check `reviewed` before relying on it")
 
-#: A hit has to score at least this fraction of the best hit to be returned. Semantic search
-#: ranks, it does not decide relevance, so without this a query comes back with a full page
-#: of whatever was least unlike it. This is scale-free, so it holds across models.
-REL_FLOOR = float(os.environ.get("FLEETLENS_GUIDANCE_REL_FLOOR", "0.7"))
-#: An absolute floor, below which nothing is returned at all. **Off by default, and it has to
-#: be, because there is no value that works for every embedding model.**
+#: How many ranked rules a topic search returns. A count, not a threshold, because every
+#: cut-off we tried turned out to depend on the embedding model.
 #:
-#: Measured on a 15-rule book with 15 on-topic and 8 off-topic queries: with `all-minilm` the
-#: on-topic top scores ran 0.157 to 0.499 and the off-topic ones 0.013 to 0.313, so they
-#: overlap and no threshold separates them. With `bge-m3` they were 0.507 to 0.603 against
-#: 0.262 to 0.497, which separates by 0.01: real, but not a margin to ship a default on.
-#: Normalising the top score against the rulebook's own distribution did not separate them
-#: either, so this is a property of the problem rather than of the statistic.
+#: Measured on one 15-rule book. An absolute floor: with `all-minilm` the on-topic top scores
+#: ran 0.157 to 0.499 and the off-topic ones 0.013 to 0.313, overlapping, so no value
+#: separated them; with `bge-m3` the same sets were 0.507 to 0.603 and 0.262 to 0.497,
+#: separating by 0.009. A *relative* floor is no better despite looking scale-free: keeping
+#: hits within 70% of the best score returned a median of 2 results on `all-minilm` and 5 on
+#: `bge-m3`, because cosine similarity has a model-specific baseline and a ratio does not
+#: remove it. Normalising against the rulebook's own score distribution overlapped too.
 #:
-#: So the honest default is to return the best match with its score and let the caller judge,
-#: rather than to guess on their behalf. Set this once you have measured your own model and
-#: your own rules: 0.50 is the calibrated value for bge-m3 on the book above.
+#: Nor is the *spread* portable, which was the last idea standing. On `bge-m3` a correct
+#: top hit scored 0.56 against 0.54 and 0.52, and a nonsense query scored 0.36 against 0.33
+#: and 0.32: the same near-identical shape either way. "Close scores mean nothing stood out"
+#: is true of `all-minilm` and false of `bge-m3`, so telling a caller to read the spread is
+#: shipping the same model dependency in a sentence instead of in code.
+#:
+#: What survives across models is the ranking and the text. So the response carries the
+#: nearest rules in order, with their titles and excerpts, and no score. A caller that asks
+#: about banana bread and is handed "Redis access goes through cache_wrapper" can tell, and
+#: does not need a number to do it.
+TOPIC_RESULTS = int(os.environ.get("FLEETLENS_GUIDANCE_RESULTS", "3"))
+#: The one opt-in. Off by default and only worth setting once you have measured your own
+#: model against your own rules; `calibrate_guidance.py` in the docs prints the value.
 MIN_SCORE = float(os.environ.get("FLEETLENS_GUIDANCE_MIN_SCORE", "0"))
-#: Below this, the response carries a caution rather than being suppressed. A number that is
-#: wrong for a model costs a sentence here, where as a hard floor it costs the answer.
-WEAK_SCORE = float(os.environ.get("FLEETLENS_GUIDANCE_WEAK_SCORE", "0.35"))
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s")
 
@@ -53,15 +57,13 @@ def _first_sentence(text: str, limit: int = 200) -> str:
     return first if len(first) <= limit else first[:limit].rsplit(" ", 1)[0] + "…"
 
 
-def _rule(obj, *, body: bool, score: float = None) -> dict:
+def _rule(obj, *, body: bool) -> dict:
     pay = obj.payload or {}
     out = {"id": obj.object_id, "title": obj.name,
            "status": pay.get("status", ""), "scope": pay.get("scope", ""),
            "reviewed": pay.get("reviewed", "") or "never reviewed"}
     if pay.get("owner"):
         out["owner"] = pay["owner"]
-    if score is not None:
-        out["score"] = round(score, 3)
     if body:
         out["guidance"] = obj.summary
     else:
@@ -69,15 +71,12 @@ def _rule(obj, *, body: bool, score: float = None) -> dict:
     return out
 
 
-def _relevant(hits: list[dict]) -> list[dict]:
-    """Hits that are actually about the query, or none."""
+def _ranked(hits: list[dict]) -> list[dict]:
+    """The top candidates, in order. No relevance judgement is made here by default."""
     scored = [h for h in hits if h.get("score") is not None]
-    if not scored:
-        return []
-    best = max(h["score"] for h in scored)
-    if best < MIN_SCORE:
-        return []
-    return [h for h in scored if h["score"] >= max(MIN_SCORE, best * REL_FLOOR)]
+    if MIN_SCORE:
+        scored = [h for h in scored if h["score"] >= MIN_SCORE]
+    return scored[:TOPIC_RESULTS]
 
 
 def register(mcp, ctx: ServiceContext) -> None:
@@ -103,9 +102,14 @@ def register(mcp, ctx: ServiceContext) -> None:
         migration are the ones being moved away from.
 
         `service` returns the rules governing that service in full, matched on what it
-        declares. `topic` searches by meaning and returns titles and excerpts, so ask again
-        with `topic=<id>` for the text of one. Neither lists everything. `detail` is "auto",
-        "full" or "titles" when you want to override that."""
+        declares. `topic` searches by meaning and returns the nearest few rules as titles,
+        excerpts and scores, so ask again with `topic=<id>` for the text of one. Neither
+        lists everything. `detail` is "auto", "full" or "titles" to override that.
+
+        A topic search always returns its nearest matches, which are not necessarily
+        relevant ones. Read the titles and decide: if none of them covers the question, the
+        rulebook does not cover it, and you should say so rather than apply the closest
+        one."""
         want_full = detail == "full"
         want_titles = detail == "titles"
 
@@ -141,26 +145,24 @@ def register(mcp, ctx: ServiceContext) -> None:
                 return {"status": "ok", "provenance": PROVENANCE,
                         "note": "semantic lookup needs an embedding model; listing all rules",
                         "rules": _all_rules()}
-            hits = _relevant(ctx.discovery.discover(topic, "guidance", 5).get("results", []))
+            found = ctx.discovery.discover(topic, "guidance", max(TOPIC_RESULTS, 5))
+            hits = _ranked(found.get("results", []))
             if not hits:
                 return {"status": "no_match", "topic": topic,
-                        "hint": "no rule is about this. Call with no arguments to see every "
-                                "rule, in case it is written in different words.",
+                        "hint": "nothing scored above this deployment's configured floor. "
+                                "Call with no arguments to see every rule, in case it is "
+                                "written in different words.",
                         "rules": []}
-            # Said plainly rather than decided here. On-topic and off-topic scores overlap
-            # for some models, so the caller is better placed to judge a weak match than a
-            # threshold is.
-            weak = hits[0]["score"] < WEAK_SCORE
             rules = []
             for h in hits:
                 obj = store.get(h["id"])
                 if obj is not None:
-                    rules.append(_rule(obj, body=want_full, score=h["score"]))
+                    rules.append(_rule(obj, body=want_full))
             out = {"status": "ok", "topic": topic, "provenance": PROVENANCE,
-                   "count": len(rules), "rules": rules}
-            if weak:
-                out["caution"] = ("the best match scored low; this may be the least unlike "
-                                  "rule rather than one that covers the question")
+                   "count": len(rules), "rules": rules,
+                   "ranking": "nearest rules by meaning, closest first. Nearest is not the "
+                              "same as relevant: if none of these covers your question, "
+                              "none of them is the answer."}
             if not want_full:
                 out["hint"] = "call again with topic=<id> for the full text of one"
             return out

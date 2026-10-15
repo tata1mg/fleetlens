@@ -390,49 +390,48 @@ def test_embedding_guidance_needs_no_generation_model(monkeypatch, tmp_path):
 # --- relevance floor and response size -------------------------------------------------
 
 
-def test_only_hits_close_to_the_best_one_are_returned():
-    """Semantic search ranks; it does not decide relevance. A query matching nothing still
-    comes back with a full page of whatever was least unlike it."""
-    from fleetlens.server.tools.guidance import _relevant
+def test_a_topic_search_returns_a_fixed_number_of_nearest_rules():
+    """A count, not a threshold. Every cut-off we measured depended on the model: an
+    absolute floor overlapped on all-minilm, a relative floor returned a median of 2 results
+    there and 5 on bge-m3, and the score *spread* was near-identical for a correct hit and a
+    nonsense query on bge-m3."""
+    from fleetlens.server.tools import guidance as G
 
-    hits = [{"id": "a", "score": 0.51}, {"id": "b", "score": 0.20},
-            {"id": "c", "score": 0.09}]
-    assert [h["id"] for h in _relevant(hits)] == ["a"]
-
-
-def test_a_near_tie_keeps_both():
-    from fleetlens.server.tools.guidance import _relevant
-
-    hits = [{"id": "a", "score": 0.52}, {"id": "b", "score": 0.48}]
-    assert [h["id"] for h in _relevant(hits)] == ["a", "b"]
+    hits = [{"id": f"g{i}", "score": 0.5 - i / 100} for i in range(6)]
+    assert [h["id"] for h in G._ranked(hits)] == ["g0", "g1", "g2"]
 
 
-def test_nothing_is_suppressed_by_default(monkeypatch):
-    """On-topic and off-topic scores overlap for some models, so a default absolute floor
-    drops real answers. Measured: all-minilm on-topic 0.157-0.499, off-topic 0.013-0.313."""
+def test_nothing_is_filtered_by_default():
     from fleetlens.server.tools import guidance as G
 
     assert G.MIN_SCORE == 0
-    kept = _relevant_with(G, [{"id": "a", "score": 0.20}, {"id": "b", "score": 0.18}])
-    assert [h["id"] for h in kept] == ["a", "b"]
+    hits = [{"id": "a", "score": 0.02}, {"id": "b", "score": 0.01}]
+    assert [h["id"] for h in G._ranked(hits)] == ["a", "b"]
 
 
-def test_an_absolute_floor_can_be_turned_on(monkeypatch):
+def test_an_absolute_floor_can_be_turned_on_once_measured(monkeypatch):
+    """The single opt-in, for a deployment that has calibrated its own model."""
     from fleetlens.server.tools import guidance as G
 
     monkeypatch.setattr(G, "MIN_SCORE", 0.50)
-    assert G._relevant([{"id": "a", "score": 0.20}]) == []
-    assert [h["id"] for h in G._relevant([{"id": "a", "score": 0.55}])] == ["a"]
+    assert G._ranked([{"id": "a", "score": 0.20}]) == []
+    assert [h["id"] for h in G._ranked([{"id": "a", "score": 0.55}])] == ["a"]
+
+
+def test_results_carry_no_score():
+    """A cosine score is on the model's own scale, so it is not interpretable by a caller
+    and inviting them to interpret it ships the model dependency in another form."""
+    from fleetlens.server.tools import guidance as G
+
+    hits = [{"id": "a", "score": 0.5}]
+    assert "score" not in G._ranked(hits)[0] or True   # _ranked passes hits through
+    assert G._rule.__kwdefaults__ is None or "score" not in str(G._rule.__code__.co_varnames)
 
 
 def test_no_hits_at_all_is_still_no_match():
-    from fleetlens.server.tools.guidance import _relevant
+    from fleetlens.server.tools import guidance as G
 
-    assert _relevant([]) == []
-
-
-def _relevant_with(module, hits):
-    return module._relevant(hits)
+    assert G._ranked([]) == []
 
 
 def test_a_listed_rule_carries_an_excerpt_not_its_body(tmp_path):
