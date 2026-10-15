@@ -91,7 +91,9 @@ def register(mcp, ctx: ServiceContext) -> None:
         return [_rule(o, body=False) for o in store.list_objects("guidance")]
 
     @mcp.tool()
-    @offloaded
+    # A topic search embeds the query through the provider before it can search, so most of
+    # this call is spent waiting on a socket rather than holding the GIL.
+    @offloaded(io_bound=True)
     def get_engineering_guidance(topic: str = "", service: str = "",
                                  detail: str = "auto") -> dict:
         """Organisation engineering standards: which libraries, frameworks and patterns to

@@ -29,6 +29,7 @@ import os
 from collections.abc import Callable
 
 import anyio.to_thread
+from anyio.lowlevel import RunVar
 
 #: How many tool bodies may run at once.
 #:
@@ -52,26 +53,61 @@ import anyio.to_thread
 #: of `get_service_graph`. A host that mostly serves scans can raise it.
 WORKERS = int(os.environ.get("FLEETLENS_TOOL_WORKERS", "0")) or 2
 
-_sized = False
+#: How many *I/O-bound* tool bodies may run at once.
+#:
+#: Every number above was measured on tools that read SQLite and build a response in
+#: Python, where the GIL caps parallelism and extra threads cost more than they buy. A tool
+#: that spends its time blocked on a socket is the opposite case: it holds no GIL while it
+#: waits, so a second thread is free parallelism and the small pool is pure queueing.
+#:
+#: Semantic search is that case. It embeds the query through the provider before it can
+#: search, which is a network round trip, and on the shared pool ten concurrent searches
+#: ran two at a time: peak in flight 2, median latency rising 0.5s to 1.0s to 1.5s as
+#: concurrency went 1 to 5 to 10, with throughput pinned near two over the call duration.
+#:
+#: Sized for a remote provider's appetite rather than for this host's cores. Lower it if
+#: your provider rate-limits; fleetlens retries a 429 but waiting is not throughput.
+IO_WORKERS = int(os.environ.get("FLEETLENS_TOOL_IO_WORKERS", "0")) or 16
+
+#: Per event loop, not per process. anyio's default thread limiter belongs to the running
+#: loop, so a module-level "already sized" flag sized the first loop and silently left every
+#: later one at anyio's default of 40. One server has one loop, so this never bit in
+#: production; it did make the first measurement of this very problem wrong.
+_SIZED = RunVar("fleetlens_cpu_limiter_sized", False)
+_IO_LIMITER: RunVar = RunVar("fleetlens_io_limiter")
 
 
 def _limiter():
-    global _sized
     limiter = anyio.to_thread.current_default_thread_limiter()
-    if not _sized:
+    if not _SIZED.get():
         limiter.total_tokens = WORKERS
-        _sized = True
+        _SIZED.set(True)
     return limiter
 
 
-def offloaded(fn: Callable) -> Callable:
+def _io_limiter():
+    try:
+        return _IO_LIMITER.get()
+    except LookupError:
+        limiter = anyio.CapacityLimiter(IO_WORKERS)
+        _IO_LIMITER.set(limiter)
+        return limiter
+
+
+def offloaded(fn: Callable = None, *, io_bound: bool = False) -> Callable:
     """`fn` as a coroutine function that runs it on a worker thread.
+
+    `io_bound` puts it on the larger pool, for a tool whose cost is waiting on something
+    outside this process rather than building a response here.
 
     `functools.wraps` carries the signature, annotations and docstring across, which is
     what FastMCP reads to build the tool's schema and description.
     """
-    @functools.wraps(fn)
-    async def run(*args, **kwargs):
-        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs),
-                                              limiter=_limiter())
-    return run
+    def wrap(f: Callable) -> Callable:
+        @functools.wraps(f)
+        async def run(*args, **kwargs):
+            limiter = _io_limiter() if io_bound else _limiter()
+            return await anyio.to_thread.run_sync(functools.partial(f, *args, **kwargs),
+                                                  limiter=limiter)
+        return run
+    return wrap(fn) if fn is not None else wrap
