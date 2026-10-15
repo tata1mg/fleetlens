@@ -344,9 +344,6 @@ def _guidance_report(g: dict, cmd: str) -> None:
     print(f"{cmd}: {g['loaded']} guidance rules from {len(g.get('roots') or [])} "
           f"rulebook(s)" + (f", {g['removed']} withdrawn" if g.get("removed") else "")
           + (f" — {g['edges']} edges to {g['services']} services" if g.get("edges") else ""))
-    if g.get("violations"):
-        print(f"{cmd}: {g['violations']} service(s) declare something a mandatory rule "
-              f"forbids — `find_guidance_violations` has the detail")
     for problem in g.get("problems", []):
         print(f"  {problem}", file=sys.stderr)
 

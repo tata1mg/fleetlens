@@ -10,8 +10,8 @@ So guidance is stored with `source="authored"` and every response that carries i
 along with when a human last reviewed it. A claim is never handed over looking like evidence.
 """
 from .embed import embed_guidance
-from .link import governing, link, violations
+from .link import governing, link
 from .load import GuidanceError, ingest_roots, load_guidance
 
 __all__ = ["GuidanceError", "load_guidance", "ingest_roots", "link", "governing",
-           "violations", "embed_guidance"]
+           "embed_guidance"]

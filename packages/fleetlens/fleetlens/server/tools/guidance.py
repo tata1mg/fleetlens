@@ -7,7 +7,7 @@ treat one as the other.
 """
 from __future__ import annotations
 
-from ...guidance.link import governing, violations
+from ...guidance.link import governing
 from ...server.app import ServiceContext
 from ._offload import offloaded
 
@@ -82,20 +82,3 @@ def register(mcp, ctx: ServiceContext) -> None:
                 "rules": [_rule(o, body=False) for o in store.list_objects("guidance")],
                 "hint": "call again with topic=<id> for the full text, or service=<slug> "
                         "for what governs one service"}
-
-    @mcp.tool()
-    @offloaded
-    def find_guidance_violations(guidance: str = "", service: str = "") -> dict:
-        """Services that declare a dependency a mandatory rule governing them forbids.
-
-        Evidence only: the rule, the service, and the package names in that service's own
-        manifest that triggered it. A match means the dependency is declared, not that it is
-        used on a live path, so treat each as a question to ask rather than a defect."""
-        rows = violations(store)
-        if guidance:
-            rows = [r for r in rows if r["guidance"] == guidance.split(":", 1)[-1]]
-        if service:
-            rows = [r for r in rows if r["service"] == service.split(":", 1)[-1]]
-        return {"status": "ok", "provenance": PROVENANCE, "count": len(rows),
-                "findings": rows,
-                "basis": "declared dependencies in each repository's own manifest"}

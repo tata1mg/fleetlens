@@ -2,13 +2,7 @@
 from __future__ import annotations
 
 from fleetlens.adapters.deps import declared_dependencies
-from fleetlens.guidance.link import (
-    applies,
-    contradicted_by,
-    governing,
-    link,
-    violations,
-)
+from fleetlens.guidance.link import applies, governing, link
 from fleetlens.store.models import KnowledgeObject
 from fleetlens.store.sqlite import SqliteStore
 
@@ -73,39 +67,18 @@ def test_mandatory_rules_sort_before_the_rest():
     assert [r["id"] for r in governing(store, "service:a")] == ["z-must", "a-maybe"]
 
 
-def test_a_violation_names_the_packages_that_triggered_it():
-    """"Violates the cache rule" is an accusation; "declares redis" is checkable."""
-    rule = _rule("redis", applies_to={"dependencies": ["cache-wrapper"]},
-                 forbids={"dependencies": ["redis", "aioredis"]})
-    assert contradicted_by(rule, _svc("a", ["cache-wrapper", "redis"])) == ["redis"]
-    assert contradicted_by(rule, _svc("b", ["cache-wrapper"])) == []
-
-
-def test_a_rule_that_does_not_govern_a_service_cannot_be_violated_by_it():
-    rule = _rule("redis", applies_to={"dependencies": ["cache-wrapper"]},
-                 forbids={"dependencies": ["redis"]})
-    assert contradicted_by(rule, _svc("b", ["redis"])) == []
-
-
-def test_only_mandatory_rules_produce_violations():
-    forbids = {"dependencies": ["redis"]}
-    store = _store([_svc("a", ["redis"])], [_rule("soft", forbids=forbids,
-                                                  status="recommended")])
-    link(store)
-    assert violations(store) == []
-
-
-def test_violations_report_the_service_rule_and_evidence():
-    store = _store([_svc("a", ["cache-wrapper", "redis"]), _svc("b", ["cache-wrapper"])],
-                   [_rule("redis-access", applies_to={"dependencies": ["cache-wrapper"]},
+def test_forbids_is_kept_but_never_reported_as_a_violation():
+    """The block documents the rule for a reader. A declared dependency is the wrong signal
+    to accuse a service from: the common violation reaches the package transitively and
+    declares nothing, so a report built on manifests misses it silently."""
+    store = _store([_svc("a", ["cache-wrapper", "redis"])],
+                   [_rule("redis", applies_to={"dependencies": ["cache-wrapper"]},
                           forbids={"dependencies": ["redis"]})])
     r = link(store)
-    assert r["violations"] == 1
-    found = violations(store)
-    assert len(found) == 1
-    assert found[0]["service"] == "a"
-    assert found[0]["guidance"] == "redis-access"
-    assert found[0]["declares"] == ["redis"]
+    assert "violations" not in r
+    rels = {e.relationship for e in store.edges_batch(["service:a"], direction="out")}
+    assert rels == {"governed_by"}
+    assert store.get("guidance:redis").payload["forbids"]["dependencies"] == ["redis"]
 
 
 def test_relinking_replaces_only_its_own_edges():

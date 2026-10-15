@@ -4,13 +4,16 @@ The content of a rule is a claim. The link from a service to that rule is not: i
 the dependencies the service declares in its own manifest. Keeping those two separable is the
 point of the design, so this module computes edges and never touches the text.
 
-Two relationships, and the difference matters:
+One relationship: `governed_by`, meaning this rule applies here, with the matched dependency
+or language recorded as the evidence.
 
-  governed_by   this rule applies here. The service declares something `applies_to` names, or
-                the rule applies to everything.
-  contradicts   this rule applies here AND the service declares something it `forbids`. The
-                evidence is a package name in a manifest, so the finding is checkable rather
-                than a judgement.
+There is deliberately no "this service violates the rule" edge. A rule's `forbids` block is
+parsed and kept, because it documents the rule for whoever reads it, but a declared dependency
+is the wrong signal to report a violation from. The question an engineer has is whether the
+code calls a forbidden library; a manifest entry is a proxy for that, and a poor one in the
+direction that matters. A service reaching a package transitively, which is the common case,
+declares nothing and would be reported clean. A report whose misses are invisible is worse
+than no report. Answering it properly needs import sites, which the index does not hold yet.
 """
 from __future__ import annotations
 
@@ -20,7 +23,6 @@ from ..store.models import Relationship
 #: and leaves the call graph and the service mesh alone.
 SOURCE = "guidance_link"
 GOVERNED_BY = "governed_by"
-CONTRADICTS = "contradicts"
 
 
 def _declared(service) -> set[str]:
@@ -66,23 +68,11 @@ def applies(rule, service) -> bool:
     return True
 
 
-def contradicted_by(rule, service) -> list[str]:
-    """The forbidden packages this service declares, if the rule governs it at all.
-
-    Returned rather than a boolean, because "violates the cache rule" is an accusation and
-    "declares `redis` and `aioredis`" is evidence someone can check in thirty seconds.
-    """
-    if not applies(rule, service):
-        return []
-    return sorted(_named(rule, "forbids") & _declared(service))
-
-
 def link(store) -> dict:
     """(Re)compute every guidance edge. Replaces this module's own edges, nothing else."""
     rules = store.list_objects("guidance")
     services = store.list_objects("service")
     edges: list[Relationship] = []
-    violations = 0
     for service in services:
         for rule in rules:
             if not applies(rule, service):
@@ -94,23 +84,15 @@ def link(store) -> dict:
                 # Why this edge exists, so nobody has to re-derive it. An empty list means the
                 # rule applies to everything rather than that nothing matched.
                 {"matched": matched, "status": (rule.payload or {}).get("status", "")}))
-            found = contradicted_by(rule, service)
-            if found and (rule.payload or {}).get("status") == "mandatory":
-                edges.append(Relationship(
-                    service.id, CONTRADICTS, rule.id, SOURCE, {"declares": found}))
-                violations += 1
     store.replace_edges(SOURCE, [s.id for s in services], edges)
     store.commit()
-    return {"rules": len(rules), "services": len(services),
-            "edges": len(edges), "violations": violations}
+    return {"rules": len(rules), "services": len(services), "edges": len(edges)}
 
 
 def governing(store, service_id: str) -> list[dict]:
     """Rules that govern one service, most binding first, with the evidence for each."""
-    edges = [e for e in store.edges_batch([service_id], direction="out")
-             if e.relationship in (GOVERNED_BY, CONTRADICTS)]
-    broken = {e.to_id: e.metadata.get("declares", []) for e in edges
-              if e.relationship == CONTRADICTS}
+    edges = [e for e in store.edges_batch([service_id], relationship=GOVERNED_BY,
+                                          direction="out")]
     out = []
     for e in edges:
         if e.relationship != GOVERNED_BY:
@@ -124,28 +106,7 @@ def governing(store, service_id: str) -> list[dict]:
             "status": pay.get("status", ""), "scope": pay.get("scope", ""),
             "reviewed": pay.get("reviewed", ""),
             "because": e.metadata.get("matched") or "applies to every service",
-            "contradicted_by": broken.get(e.to_id, []),
         })
     rank = {"mandatory": 0, "recommended": 1, "contextual": 2}
     out.sort(key=lambda r: (rank.get(r["status"], 3), r["id"]))
-    return out
-
-
-def violations(store) -> list[dict]:
-    """Every service that declares something a mandatory rule governing it forbids.
-
-    This is a report about people's repositories, so it says only what the manifests say: the
-    rule, the service, and the package names that triggered it. No severity, no score.
-    """
-    out = []
-    for e in store.edges_batch([s.id for s in store.list_objects("service")],
-                               relationship=CONTRADICTS, direction="out"):
-        rule = store.get(e.to_id)
-        out.append({
-            "service": e.from_id.split(":", 1)[-1],
-            "guidance": e.to_id.split(":", 1)[-1],
-            "title": rule.name if rule else "",
-            "declares": e.metadata.get("declares", []),
-        })
-    out.sort(key=lambda r: (r["guidance"], r["service"]))
     return out
