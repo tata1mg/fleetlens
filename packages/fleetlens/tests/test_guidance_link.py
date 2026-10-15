@@ -187,3 +187,109 @@ def test_poetry_and_cargo_tables_are_read(tmp_path):
 
 def test_no_manifest_is_not_an_error(tmp_path):
     assert declared_dependencies(tmp_path) == []
+
+
+# --- language scoping -----------------------------------------------------------------
+
+
+def _svc_lang(slug, deps, langs):
+    return KnowledgeObject("service", slug, slug, None, "unknown", "static", "index",
+                           None, None, {"dependencies": deps, "languages": langs})
+
+
+def test_a_rule_scoped_to_a_language_skips_other_languages():
+    """"New Python services use X" named no dependency, so it matched the whole fleet."""
+    rule = _rule("framework", applies_to={"languages": ["python"]})
+    assert applies(rule, _svc_lang("api", [], ["python"]))
+    assert not applies(rule, _svc_lang("web", [], ["javascript"]))
+
+
+def test_language_and_dependency_both_have_to_hold():
+    rule = _rule("r", applies_to={"dependencies": ["some-lib"], "languages": ["python"]})
+    assert applies(rule, _svc_lang("a", ["some-lib"], ["python"]))
+    assert not applies(rule, _svc_lang("b", ["some-lib"], ["javascript"]))
+    assert not applies(rule, _svc_lang("c", ["other"], ["python"]))
+
+
+def test_a_polyglot_service_matches_on_any_of_its_languages():
+    rule = _rule("r", applies_to={"languages": ["python"]})
+    assert applies(rule, _svc_lang("mono", [], ["typescript", "python"]))
+
+
+def test_the_declared_language_is_used_when_none_were_observed():
+    """An index built before languages were recorded still matches."""
+    svc = KnowledgeObject("service", "old", "old", None, "u", "static", "index", None, None,
+                          {"dependencies": [], "language": "python"})
+    assert applies(_rule("r", applies_to={"languages": ["python"]}), svc)
+
+
+def test_auto_is_not_a_language():
+    svc = KnowledgeObject("service", "old", "old", None, "u", "static", "index", None, None,
+                          {"dependencies": [], "language": "auto"})
+    assert not applies(_rule("r", applies_to={"languages": ["python"]}), svc)
+
+
+def test_the_matched_language_is_recorded_as_evidence():
+    store = _store([_svc_lang("a", [], ["python"])],
+                   [_rule("r", applies_to={"languages": ["python"]})])
+    link(store)
+    assert governing(store, "service:a")[0]["because"] == ["python"]
+
+
+# --- observed languages ---------------------------------------------------------------
+
+
+def test_languages_are_counted_from_files(tmp_path):
+    from fleetlens.adapters.languages import observed_languages
+
+    (tmp_path / "pkg").mkdir()
+    for i in range(30):
+        (tmp_path / "pkg" / f"m{i}.py").write_text("x = 1\n")
+    assert observed_languages(tmp_path) == ["python"]
+
+
+def test_a_stray_config_file_is_not_a_language(tmp_path):
+    """One postcss.config.mjs must not make a Python service a JavaScript one."""
+    from fleetlens.adapters.languages import observed_languages
+
+    for i in range(60):
+        (tmp_path / f"m{i}.py").write_text("x = 1\n")
+    (tmp_path / "postcss.config.mjs").write_text("export default {}\n")
+    assert observed_languages(tmp_path) == ["python"]
+
+
+def test_a_single_file_never_counts_however_small_the_service(tmp_path):
+    """In a 14-file service one app.js clears any percentage floor."""
+    from fleetlens.adapters.languages import observed_languages
+
+    for i in range(13):
+        (tmp_path / f"m{i}.py").write_text("x = 1\n")
+    (tmp_path / "app.js").write_text("console.log(1)\n")
+    assert observed_languages(tmp_path) == ["python"]
+
+
+def test_a_real_second_language_is_kept(tmp_path):
+    from fleetlens.adapters.languages import observed_languages
+
+    for i in range(40):
+        (tmp_path / f"m{i}.py").write_text("x = 1\n")
+    for i in range(25):
+        (tmp_path / f"c{i}.ts").write_text("export const x = 1\n")
+    assert observed_languages(tmp_path) == ["python", "typescript"]
+
+
+def test_dependency_trees_do_not_vote(tmp_path):
+    from fleetlens.adapters.languages import observed_languages
+
+    (tmp_path / "node_modules" / "left-pad").mkdir(parents=True)
+    for i in range(500):
+        (tmp_path / "node_modules" / "left-pad" / f"i{i}.js").write_text("module.exports=1\n")
+    for i in range(30):
+        (tmp_path / f"m{i}.py").write_text("x = 1\n")
+    assert observed_languages(tmp_path) == ["python"]
+
+
+def test_an_empty_tree_has_no_language(tmp_path):
+    from fleetlens.adapters.languages import observed_languages
+
+    assert observed_languages(tmp_path) == []

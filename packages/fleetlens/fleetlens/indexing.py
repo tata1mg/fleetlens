@@ -15,6 +15,7 @@ from typing import Optional
 from .adapters import registry as iface_registry
 from .adapters.deps import declared_dependencies
 from .adapters.hosts import config_hosts, service_identity
+from .adapters.languages import observed_languages
 from .adapters.outbound import discover_outbound as _py_outbound
 from .adapters.ruby_outbound import discover_outbound as _rb_outbound
 from .adapters.ts_outbound import discover_outbound as _ts_outbound
@@ -139,6 +140,10 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
             # global namespace, and some ecosystems barely import their dependencies by name.
             with tick("declared dependencies"):
                 dependencies = declared_dependencies(root)
+                # What the service is written in, counted from its own files. The declared
+                # language picks an indexer and is one value; this answers a different
+                # question and a monorepo answers it with more than one.
+                languages = observed_languages(root)
 
             with tick("config hosts + identity"):
                 host_bindings = [{"key": b.key, "host": b.host, "port": b.port,
@@ -155,7 +160,8 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
         + [asdict(sk) for sk in skipped_out]
     return {"slug": slug, "root": root, "spec": spec, "outbound": outbound,
             "host_bindings": host_bindings, "identity": identity, "skipped": skipped,
-            "dependencies": dependencies, "call_graph_ok": call_graph_ok}
+            "dependencies": dependencies, "languages": languages,
+            "language": language, "call_graph_ok": call_graph_ok}
 
 
 def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats=None) -> dict:
@@ -188,7 +194,11 @@ def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats
                  "outbound": x["outbound"], "host_bindings": x["host_bindings"],
                  "declared_hosts": dict(spec.hosts or {}), "identity": x["identity"],
                  "root": str(root), "skipped": x["skipped"],
-                 "dependencies": x.get("dependencies", [])}))
+                 "dependencies": x.get("dependencies", []),
+                 # Declared: the one value that picked the SCIP indexer. Observed: what
+                 # the files say, which is what a rule scoped to a language matches on.
+                 "language": x.get("language", "auto"),
+                 "languages": x.get("languages", [])}))
     store.commit()
 
     summary["slug"] = slug

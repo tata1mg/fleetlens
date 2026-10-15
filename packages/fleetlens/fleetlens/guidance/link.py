@@ -32,15 +32,38 @@ def _named(rule, block: str, key: str = "dependencies") -> set[str]:
     return {str(d).lower() for d in (section.get(key) or [])}
 
 
+def _languages(service) -> set[str]:
+    """What the service is written in. Observed first; the declared value is a fallback for
+    an index built before languages were recorded."""
+    pay = service.payload or {}
+    seen = {str(x).lower() for x in (pay.get("languages") or [])}
+    if seen:
+        return seen
+    declared = str(pay.get("language", "")).lower()
+    return {declared} if declared and declared != "auto" else set()
+
+
 def applies(rule, service) -> bool:
     """Whether `rule` governs `service`.
 
-    A rule that names no dependencies applies to every service: that is how a rule about
-    project layout or naming is written, and it is the sensible default for "this is how we
-    work here". A rule that does name them applies only where one is declared.
+    Each condition in `applies_to` narrows: a rule naming both a dependency and a language
+    applies where both hold. A rule naming nothing applies to every service, which is how a
+    rule about project layout or naming gets written and is the sensible default for "this
+    is how we work here".
+
+    Most rules need no language at all, because a package name already carries its
+    ecosystem: no JavaScript repository declares a Python package and means the same thing.
+    The language condition is for the rules anchored to no library, which would otherwise
+    match the whole fleet. "New Python services use X" named no dependency, so it matched
+    all 41 services including the Ruby and JavaScript ones.
     """
-    wanted = _named(rule, "applies_to")
-    return not wanted or bool(wanted & _declared(service))
+    deps = _named(rule, "applies_to")
+    if deps and not (deps & _declared(service)):
+        return False
+    langs = _named(rule, "applies_to", "languages")
+    if langs and not (langs & _languages(service)):
+        return False
+    return True
 
 
 def contradicted_by(rule, service) -> list[str]:
@@ -64,7 +87,8 @@ def link(store) -> dict:
         for rule in rules:
             if not applies(rule, service):
                 continue
-            matched = sorted(_named(rule, "applies_to") & _declared(service))
+            matched = sorted(_named(rule, "applies_to") & _declared(service)) \
+                + sorted(_named(rule, "applies_to", "languages") & _languages(service))
             edges.append(Relationship(
                 service.id, GOVERNED_BY, rule.id, SOURCE,
                 # Why this edge exists, so nobody has to re-derive it. An empty list means the
