@@ -20,13 +20,26 @@ PROVENANCE = ("human-authored engineering guidance, not derived from source; "
               "check `reviewed` before relying on it")
 
 #: A hit has to score at least this fraction of the best hit to be returned. Semantic search
-#: ranks, it does not decide relevance, so a query matching nothing still comes back with a
-#: full page of whatever was least unlike it. Measured on a real rulebook, correct hits
-#: scored 0.31 to 0.51 and wrong ones 0.09 to 0.20, so the gap is wide and relative.
+#: ranks, it does not decide relevance, so without this a query comes back with a full page
+#: of whatever was least unlike it. This is scale-free, so it holds across models.
 REL_FLOOR = float(os.environ.get("FLEETLENS_GUIDANCE_REL_FLOOR", "0.7"))
-#: ...and an absolute floor, for when everything scores badly and the best of a bad set would
-#: otherwise clear the relative one on its own. Model dependent, hence the override.
-MIN_SCORE = float(os.environ.get("FLEETLENS_GUIDANCE_MIN_SCORE", "0.25"))
+#: An absolute floor, below which nothing is returned at all. **Off by default, and it has to
+#: be, because there is no value that works for every embedding model.**
+#:
+#: Measured on a 15-rule book with 15 on-topic and 8 off-topic queries: with `all-minilm` the
+#: on-topic top scores ran 0.157 to 0.499 and the off-topic ones 0.013 to 0.313, so they
+#: overlap and no threshold separates them. With `bge-m3` they were 0.507 to 0.603 against
+#: 0.262 to 0.497, which separates by 0.01: real, but not a margin to ship a default on.
+#: Normalising the top score against the rulebook's own distribution did not separate them
+#: either, so this is a property of the problem rather than of the statistic.
+#:
+#: So the honest default is to return the best match with its score and let the caller judge,
+#: rather than to guess on their behalf. Set this once you have measured your own model and
+#: your own rules: 0.50 is the calibrated value for bge-m3 on the book above.
+MIN_SCORE = float(os.environ.get("FLEETLENS_GUIDANCE_MIN_SCORE", "0"))
+#: Below this, the response carries a caution rather than being suppressed. A number that is
+#: wrong for a model costs a sentence here, where as a hard floor it costs the answer.
+WEAK_SCORE = float(os.environ.get("FLEETLENS_GUIDANCE_WEAK_SCORE", "0.35"))
 
 _SENTENCE = re.compile(r"(?<=[.!?])\s")
 
@@ -134,15 +147,23 @@ def register(mcp, ctx: ServiceContext) -> None:
                         "hint": "no rule is about this. Call with no arguments to see every "
                                 "rule, in case it is written in different words.",
                         "rules": []}
+            # Said plainly rather than decided here. On-topic and off-topic scores overlap
+            # for some models, so the caller is better placed to judge a weak match than a
+            # threshold is.
+            weak = hits[0]["score"] < WEAK_SCORE
             rules = []
             for h in hits:
                 obj = store.get(h["id"])
                 if obj is not None:
                     rules.append(_rule(obj, body=want_full, score=h["score"]))
-            return {"status": "ok", "topic": topic, "provenance": PROVENANCE,
-                    "count": len(rules), "rules": rules,
-                    "hint": None if want_full else
-                            "call again with topic=<id> for the full text of one"}
+            out = {"status": "ok", "topic": topic, "provenance": PROVENANCE,
+                   "count": len(rules), "rules": rules}
+            if weak:
+                out["caution"] = ("the best match scored low; this may be the least unlike "
+                                  "rule rather than one that covers the question")
+            if not want_full:
+                out["hint"] = "call again with topic=<id> for the full text of one"
+            return out
 
         return {"status": "ok", "provenance": PROVENANCE, "rules": _all_rules(),
                 "hint": "call again with topic=<id> for the full text, or service=<slug> "

@@ -407,12 +407,32 @@ def test_a_near_tie_keeps_both():
     assert [h["id"] for h in _relevant(hits)] == ["a", "b"]
 
 
-def test_a_uniformly_bad_set_returns_nothing():
-    """Relative alone is not enough: the best of a bad set clears it on its own."""
+def test_nothing_is_suppressed_by_default(monkeypatch):
+    """On-topic and off-topic scores overlap for some models, so a default absolute floor
+    drops real answers. Measured: all-minilm on-topic 0.157-0.499, off-topic 0.013-0.313."""
+    from fleetlens.server.tools import guidance as G
+
+    assert G.MIN_SCORE == 0
+    kept = _relevant_with(G, [{"id": "a", "score": 0.20}, {"id": "b", "score": 0.18}])
+    assert [h["id"] for h in kept] == ["a", "b"]
+
+
+def test_an_absolute_floor_can_be_turned_on(monkeypatch):
+    from fleetlens.server.tools import guidance as G
+
+    monkeypatch.setattr(G, "MIN_SCORE", 0.50)
+    assert G._relevant([{"id": "a", "score": 0.20}]) == []
+    assert [h["id"] for h in G._relevant([{"id": "a", "score": 0.55}])] == ["a"]
+
+
+def test_no_hits_at_all_is_still_no_match():
     from fleetlens.server.tools.guidance import _relevant
 
-    assert _relevant([{"id": "a", "score": 0.20}, {"id": "b", "score": 0.18}]) == []
     assert _relevant([]) == []
+
+
+def _relevant_with(module, hits):
+    return module._relevant(hits)
 
 
 def test_a_listed_rule_carries_an_excerpt_not_its_body(tmp_path):
