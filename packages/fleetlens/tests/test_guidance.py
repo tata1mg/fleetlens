@@ -385,3 +385,49 @@ def test_embedding_guidance_needs_no_generation_model(monkeypatch, tmp_path):
     assert built is not None
     assert "some-llm:7b" not in asked, "asked for a generation model it never calls"
     assert "all-minilm" in asked
+
+
+# --- relevance floor and response size -------------------------------------------------
+
+
+def test_only_hits_close_to_the_best_one_are_returned():
+    """Semantic search ranks; it does not decide relevance. A query matching nothing still
+    comes back with a full page of whatever was least unlike it."""
+    from fleetlens.server.tools.guidance import _relevant
+
+    hits = [{"id": "a", "score": 0.51}, {"id": "b", "score": 0.20},
+            {"id": "c", "score": 0.09}]
+    assert [h["id"] for h in _relevant(hits)] == ["a"]
+
+
+def test_a_near_tie_keeps_both():
+    from fleetlens.server.tools.guidance import _relevant
+
+    hits = [{"id": "a", "score": 0.52}, {"id": "b", "score": 0.48}]
+    assert [h["id"] for h in _relevant(hits)] == ["a", "b"]
+
+
+def test_a_uniformly_bad_set_returns_nothing():
+    """Relative alone is not enough: the best of a bad set clears it on its own."""
+    from fleetlens.server.tools.guidance import _relevant
+
+    assert _relevant([{"id": "a", "score": 0.20}, {"id": "b", "score": 0.18}]) == []
+    assert _relevant([]) == []
+
+
+def test_a_listed_rule_carries_an_excerpt_not_its_body(tmp_path):
+    from fleetlens.server.tools.guidance import _rule
+
+    obj = read_file(_write(tmp_path, "cache.md", GOOD))
+    brief = _rule(obj, body=False)
+    full = _rule(obj, body=True)
+    assert "guidance" not in brief and brief["excerpt"]
+    assert len(str(brief)) < len(str(full))
+    assert full["guidance"] == obj.summary
+
+
+def test_a_rule_never_reviewed_says_so(tmp_path):
+    from fleetlens.server.tools.guidance import _rule
+
+    obj = read_file(_write(tmp_path, "c.md", GOOD.replace("reviewed: 2026-10-09\n", "")))
+    assert _rule(obj, body=False)["reviewed"] == "never reviewed"

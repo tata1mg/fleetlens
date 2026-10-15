@@ -76,13 +76,18 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
     out = [index_service(repo, spec, store, default_language=language, llm=llm,
                          progress=progress, stats=stats)
            for spec in resolve_services(repo, default_name=slug)]
-    # A repo may declare rules as well as, or instead of, code. Added rather than replaced:
-    # this call has seen one rulebook, and a rule missing from it was never its to withdraw.
+    # A repo may declare rules as well as, or instead of, code. Withdrawal is scoped to the
+    # rulebooks this call read, so indexing one repo never retires another's rules.
     roots = guidance_roots(repo)
     if roots:
         from .guidance import ingest_roots
-        r = ingest_roots(store, roots)
-        out.append({"slug": repo.name, "guidance": r})
+        out.append({"slug": repo.name, "guidance": ingest_roots(store, roots)})
+    else:
+        # Guidance is joined to services by what each service declares, so re-indexing a
+        # service changes the join even though no rule changed. Linking only when rules are
+        # ingested left an ordering trap: index a service after the rulebook and its edges
+        # never appear. Milliseconds, so there is no reason to make the caller remember.
+        _relink(store)
     return out
 
 
@@ -233,6 +238,17 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
     return _load_service(x, store, llm=llm, progress=progress, stats=stats)
 
 
+def _relink(store) -> None:
+    """Recompute guidance edges, if the index holds any guidance at all."""
+    try:
+        if not store.list_objects("guidance"):
+            return
+        from .guidance import link
+        link(store)
+    except Exception:       # noqa: BLE001 - a failed relink must not fail an index
+        pass
+
+
 def _looks_like_repo(d: Path) -> bool:
     if not d.is_dir() or d.name.startswith(".") or d.name in _SKIP:
         return False
@@ -313,7 +329,9 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
                "rulebooks": len(rulebooks_only)}
         if books:
             from .guidance import ingest_roots
-            out["guidance"] = ingest_roots(store, books)
+            out["guidance"] = ingest_roots(store, books)   # ingesting relinks
+        else:
+            _relink(store)
         return out
 
     if jobs <= 1:

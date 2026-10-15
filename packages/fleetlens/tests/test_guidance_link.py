@@ -266,3 +266,60 @@ def test_an_empty_tree_has_no_language(tmp_path):
     from fleetlens.adapters.languages import observed_languages
 
     assert observed_languages(tmp_path) == []
+
+
+# --- "I cannot tell" is not "nothing applies" -----------------------------------------
+
+
+def test_a_service_indexed_before_deps_and_languages_is_not_matchable():
+    """The silent failure: every rule needs one or the other, so a stale service matches
+    nothing, and an empty list reads exactly like a clean bill of health."""
+    from fleetlens.guidance.link import matchable
+
+    stale = KnowledgeObject("service", "old", "old", None, "u", "static", "index", None,
+                            None, {"symbol_count": 100, "interface_count": 34})
+    assert not matchable(stale)
+    assert matchable(_svc("a", ["cache-wrapper"]))
+    assert matchable(_svc_lang("b", [], ["python"]))
+
+
+def test_auto_alone_does_not_make_a_service_matchable():
+    from fleetlens.guidance.link import matchable
+
+    svc = KnowledgeObject("service", "x", "x", None, "u", "static", "index", None, None,
+                          {"language": "auto"})
+    assert not matchable(svc)
+
+
+# --- relinking when either side changes ------------------------------------------------
+
+
+def test_indexing_a_service_after_the_rulebook_still_links_it(tmp_path):
+    """The ordering trap: link() used to run only when rules were ingested."""
+    from fleetlens.guidance import ingest_roots
+    from fleetlens.indexing import _relink
+
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "r.md").write_text(
+        "---\nkind: guidance\nid: redis\ntitle: Redis\n"
+        "applies_to:\n  dependencies: [cache-wrapper]\n---\n\nbody\n")
+
+    store = SqliteStore(":memory:")
+    ingest_roots(store, [rules])                 # rules first, no services yet
+    store.upsert_object(_svc("later", ["cache-wrapper"]))
+    store.commit()
+    assert governing(store, "service:later") == []
+
+    _relink(store)
+    assert [r["id"] for r in governing(store, "service:later")] == ["redis"]
+
+
+def test_relink_is_a_no_op_without_guidance():
+    from fleetlens.indexing import _relink
+
+    store = SqliteStore(":memory:")
+    store.upsert_object(_svc("a", ["x"]))
+    store.commit()
+    _relink(store)
+    assert store.edges_batch(["service:a"], direction="out") == []

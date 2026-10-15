@@ -89,6 +89,19 @@ def link(store) -> dict:
     return {"rules": len(rules), "services": len(services), "edges": len(edges)}
 
 
+def matchable(service) -> bool:
+    """Whether anything is known about this service that a rule could match on.
+
+    A rule matches on a declared dependency or an observed language, and both are recorded
+    at index time. A service indexed before they were cannot match any rule, and the
+    difference between "no rule applies here" and "I cannot tell" is the whole value of the
+    answer. Without this the caller is handed an empty list that reads like a clean bill.
+    """
+    pay = service.payload or {}
+    return bool(pay.get("dependencies") or pay.get("languages") or
+                (pay.get("language") and pay["language"] != "auto"))
+
+
 def governing(store, service_id: str) -> list[dict]:
     """Rules that govern one service, most binding first, with the evidence for each."""
     edges = [e for e in store.edges_batch([service_id], relationship=GOVERNED_BY,
