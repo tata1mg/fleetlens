@@ -53,9 +53,13 @@ def _llm_args(p, *, with_embed: bool) -> None:
     p.add_argument("--pull", action="store_true", help="auto `ollama pull` any missing model")
 
 
-def _build_llm(args, cmd: str, *, need_embed: bool):
+def _build_llm(args, cmd: str, *, need_embed: bool, need_llm: bool = True):
     """Preflight (fail fast + loud, before touching the store) and build the LLM — and the
-    embedder when `need_embed`. Returns (llm, embedder) or None after printing the error."""
+    embedder when `need_embed`. Returns (llm, embedder) or None after printing the error.
+
+    `need_llm` is false for work that only embeds. Embedding authored guidance calls no
+    model that generates anything, so demanding a generation model be installed first turns
+    a run that would have succeeded into "pull 4.7GB of qwen you will never invoke"."""
     from .enrich import build_embeddings, build_llm
     from .enrich.providers import (
         ProviderError,
@@ -66,14 +70,14 @@ def _build_llm(args, cmd: str, *, need_embed: bool):
     api_key = os.environ.get(args.api_key_env, "") if args.api_key_env else ""
     embed_provider = getattr(args, "embed_provider", "ollama")
     embed_model = getattr(args, "embed_model", "")
-    if args.provider == "ollama" or (need_embed and embed_provider == "ollama"):
+    if (need_llm and args.provider == "ollama") or (need_embed and embed_provider == "ollama"):
         try:
             installed = ollama_installed_models(args.base_url or "http://localhost:11434")
         except ProviderError as exc:
             print(f"{cmd}: Ollama not reachable — {exc}\n"
                   "  start it (`ollama serve`) or use --provider openai.", file=sys.stderr)
             return None
-        need = ([args.model] if args.provider == "ollama" else []) + \
+        need = ([args.model] if need_llm and args.provider == "ollama" else []) + \
                ([embed_model] if embed_provider == "ollama" and need_embed else [])
         missing = [m for m in need if not ollama_has_model(m, installed)]
         if missing and args.pull:
@@ -89,7 +93,7 @@ def _build_llm(args, cmd: str, *, need_embed: bool):
             if near:
                 print(f"  or pick one you have: --model {'  |  --model '.join(near)}", file=sys.stderr)
             return None
-    elif not api_key:
+    elif not api_key and (need_llm or need_embed):
         print(f"{cmd}: no API key — set ${args.api_key_env} (or --api-key-env).", file=sys.stderr)
         return None
 
@@ -376,8 +380,11 @@ def _cmd_enrich(args) -> int:
 
     kinds = tuple(k.strip() for k in args.kinds.split(",") if k.strip())
     summary_kinds = tuple(k for k in kinds if k not in ("gaps", "guidance"))
+    # Guidance is embedded as authored and never summarised, so a run that only does
+    # guidance needs an embedder and no generation model at all.
     built = _build_llm(args, "fl enrich",
-                       need_embed=bool(summary_kinds) or "guidance" in kinds)
+                       need_embed=bool(summary_kinds) or "guidance" in kinds,
+                       need_llm=bool(summary_kinds) or "gaps" in kinds)
     if built is None:
         return 2
     llm, embedder = built

@@ -355,3 +355,33 @@ def test_indexing_one_repo_picks_up_the_rules_it_declares(tmp_path):
     assert [o.object_id for o in store.list_objects("guidance")] == ["cache-access"]
     assert store.list_objects("service") == []
     assert out[-1]["guidance"]["loaded"] == 1
+
+
+def test_embedding_guidance_needs_no_generation_model(monkeypatch, tmp_path):
+    """Authored rules are embedded as written, so a guidance-only run must not demand that
+    a generation model be installed first."""
+    import argparse
+
+    from fleetlens import cli
+
+    asked: list = []
+
+    def fake_installed(base_url):
+        return ["all-minilm:latest"]
+
+    def fake_has(model, installed):
+        asked.append(model)
+        return any(i.split(":")[0] == model.split(":")[0] for i in installed)
+
+    monkeypatch.setattr(cli, "_DEFAULT_DB", str(tmp_path / "x.db"), raising=False)
+    import fleetlens.enrich.providers as providers
+    monkeypatch.setattr(providers, "ollama_installed_models", fake_installed)
+    monkeypatch.setattr(providers, "ollama_has_model", fake_has)
+
+    args = argparse.Namespace(
+        provider="ollama", model="some-llm:7b", embed_provider="ollama",
+        embed_model="all-minilm", base_url="", api_key_env="OPENAI_API_KEY", pull=False)
+    built = cli._build_llm(args, "fl enrich", need_embed=True, need_llm=False)
+    assert built is not None
+    assert "some-llm:7b" not in asked, "asked for a generation model it never calls"
+    assert "all-minilm" in asked
