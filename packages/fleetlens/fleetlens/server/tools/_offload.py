@@ -29,49 +29,88 @@ import os
 from collections.abc import Callable
 
 import anyio.to_thread
+from anyio.lowlevel import RunVar
 
-#: How many tool bodies may run at once.
+#: How many tool bodies may run at once by default.
 #:
-#: anyio defaults to 40. Most of a tool's cost is building its response in Python, which
-#: holds the GIL, so extra threads add switching rather than parallelism and the tools with
-#: the largest responses get slower under load. Two hosts, both measured at concurrency 8
-#: and 16, agree on the shape:
+#: The question a pool size answers is not "is this tool I/O" but "does it hold the GIL
+#: while it works", and for almost every tool here the answer is no. A thread blocked on a
+#: socket releases it. `sqlite3` releases it around the C call. numpy releases it for a
+#: matrix product. What holds it is building a large response in Python, and exactly one
+#: tool does enough of that to matter.
+#:
+#: So the pool is wide and the one tool that contends is annotated, rather than the other
+#: way round. The earlier default of 2 was set for that one tool and charged to every
+#: other: ten concurrent semantic searches ran two at a time, because each embeds its query
+#: through the provider first and then waits on a socket that holds nothing.
+#:
+#:     concurrency                  1       5      10
+#:     at 2 workers, median      0.52s   1.01s   1.51s      (peak in flight: 2)
+#:     at this default, median   0.52s   0.50s   0.51s      (peak in flight: 10)
+#:
+#: Sized for waiting, not for cores: these threads are mostly parked. Beyond this the
+#: constraint is the provider's rate limit rather than the host.
+WORKERS = int(os.environ.get("FLEETLENS_TOOL_WORKERS", "0")) or 16
+
+#: How many *GIL-bound* tool bodies may run at once, for tools marked `cpu_bound`.
+#:
+#: Measured on two hosts at concurrency 8 and 16, which agree on the shape:
 #:
 #:     workers                    2       4       8      40
 #:     get_service_graph, c=8    582     892    1263    1343  ms
 #:     get_service_graph, c=16  1196    1781       -       -  ms
 #:
-#: Everything else moves by less than noise, except the full-scan case in `find_symbol`,
-#: which is SQL rather than Python, releases the GIL and is about 10% happier with more
-#: threads. Two is the better trade while `get_service_graph` is the entry point the tool
-#: descriptions point clients at.
+#: `get_service_graph` hands back the whole dependency graph, and assembling that response
+#: is Python dict and list construction. Extra threads buy nothing the GIL will allow and
+#: cost switching, so it gets slower under load. Everything else moved by less than noise,
+#: and `find_symbol`'s full scan, which is SQL rather than Python, was about 10% happier
+#: with more threads.
 #:
-#: The pool is not sized for parallelism, which the GIL caps anyway, but so that a slow
-#: call does not stop the server. Two slots means one scan still leaves a free slot and two
-#: concurrent scans will delay a cheap call; four gave more headroom there and cost a third
-#: of `get_service_graph`. A host that mostly serves scans can raise it.
-WORKERS = int(os.environ.get("FLEETLENS_TOOL_WORKERS", "0")) or 2
+#: This is not sized for parallelism, which the GIL caps anyway, but so that a slow call
+#: does not stop the server: two slots mean one heavy response still leaves a free slot.
+CPU_WORKERS = int(os.environ.get("FLEETLENS_TOOL_CPU_WORKERS", "0")) or 2
 
-_sized = False
+#: Per event loop, not per process. anyio's default thread limiter belongs to the running
+#: loop, so a module-level "already sized" flag sized the first loop and silently left every
+#: later one at anyio's default of 40. One server has one loop, so this never bit in
+#: production; it did make the first measurement of this very problem wrong.
+_SIZED = RunVar("fleetlens_default_limiter_sized", False)
+_CPU_LIMITER: RunVar = RunVar("fleetlens_cpu_limiter")
 
 
 def _limiter():
-    global _sized
     limiter = anyio.to_thread.current_default_thread_limiter()
-    if not _sized:
+    if not _SIZED.get():
         limiter.total_tokens = WORKERS
-        _sized = True
+        _SIZED.set(True)
     return limiter
 
 
-def offloaded(fn: Callable) -> Callable:
+def _cpu_limiter():
+    try:
+        return _CPU_LIMITER.get()
+    except LookupError:
+        limiter = anyio.CapacityLimiter(CPU_WORKERS)
+        _CPU_LIMITER.set(limiter)
+        return limiter
+
+
+def offloaded(fn: Callable = None, *, cpu_bound: bool = False) -> Callable:
     """`fn` as a coroutine function that runs it on a worker thread.
+
+    Mark a tool `cpu_bound` when the bulk of its cost is building its response in Python,
+    which holds the GIL: it then runs on a small pool of its own, so several of them cannot
+    contend with each other or stall the cheap calls. Leave it off otherwise, including for
+    anything that waits on a network, a subprocess or SQLite.
 
     `functools.wraps` carries the signature, annotations and docstring across, which is
     what FastMCP reads to build the tool's schema and description.
     """
-    @functools.wraps(fn)
-    async def run(*args, **kwargs):
-        return await anyio.to_thread.run_sync(functools.partial(fn, *args, **kwargs),
-                                              limiter=_limiter())
-    return run
+    def wrap(f: Callable) -> Callable:
+        @functools.wraps(f)
+        async def run(*args, **kwargs):
+            limiter = _cpu_limiter() if cpu_bound else _limiter()
+            return await anyio.to_thread.run_sync(functools.partial(f, *args, **kwargs),
+                                                  limiter=limiter)
+        return run
+    return wrap(fn) if fn is not None else wrap
