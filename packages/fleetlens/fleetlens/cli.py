@@ -53,9 +53,13 @@ def _llm_args(p, *, with_embed: bool) -> None:
     p.add_argument("--pull", action="store_true", help="auto `ollama pull` any missing model")
 
 
-def _build_llm(args, cmd: str, *, need_embed: bool):
+def _build_llm(args, cmd: str, *, need_embed: bool, need_llm: bool = True):
     """Preflight (fail fast + loud, before touching the store) and build the LLM — and the
-    embedder when `need_embed`. Returns (llm, embedder) or None after printing the error."""
+    embedder when `need_embed`. Returns (llm, embedder) or None after printing the error.
+
+    `need_llm` is false for work that only embeds. Embedding authored guidance calls no
+    model that generates anything, so demanding a generation model be installed first turns
+    a run that would have succeeded into "pull 4.7GB of qwen you will never invoke"."""
     from .enrich import build_embeddings, build_llm
     from .enrich.providers import (
         ProviderError,
@@ -66,14 +70,14 @@ def _build_llm(args, cmd: str, *, need_embed: bool):
     api_key = os.environ.get(args.api_key_env, "") if args.api_key_env else ""
     embed_provider = getattr(args, "embed_provider", "ollama")
     embed_model = getattr(args, "embed_model", "")
-    if args.provider == "ollama" or (need_embed and embed_provider == "ollama"):
+    if (need_llm and args.provider == "ollama") or (need_embed and embed_provider == "ollama"):
         try:
             installed = ollama_installed_models(args.base_url or "http://localhost:11434")
         except ProviderError as exc:
             print(f"{cmd}: Ollama not reachable — {exc}\n"
                   "  start it (`ollama serve`) or use --provider openai.", file=sys.stderr)
             return None
-        need = ([args.model] if args.provider == "ollama" else []) + \
+        need = ([args.model] if need_llm and args.provider == "ollama" else []) + \
                ([embed_model] if embed_provider == "ollama" and need_embed else [])
         missing = [m for m in need if not ollama_has_model(m, installed)]
         if missing and args.pull:
@@ -89,7 +93,7 @@ def _build_llm(args, cmd: str, *, need_embed: bool):
             if near:
                 print(f"  or pick one you have: --model {'  |  --model '.join(near)}", file=sys.stderr)
             return None
-    elif not api_key:
+    elif not api_key and (need_llm or need_embed):
         print(f"{cmd}: no API key — set ${args.api_key_env} (or --api-key-env).", file=sys.stderr)
         return None
 
@@ -266,6 +270,14 @@ def _cmd_index(args) -> int:
     finally:
         store.close()
     for s in results:
+        if s.get("guidance"):
+            g = s["guidance"]
+            print(f"fl index: {s['slug']} -> {args.db}  ({g['loaded']} guidance rules"
+                  + (f", {g['removed']} withdrawn" if g.get("removed") else "")
+                  + "; declared in fleetlens.yaml, so no service node and no symbols)")
+            for problem in g["problems"]:
+                print(f"  {problem}", file=sys.stderr)
+            continue
         if s.get("library"):
             print(f"fl index: {s['slug']} -> {args.db}  "
                   f"({s['nodes']} symbols, {s['edges']} calls; library, so no service "
@@ -322,10 +334,22 @@ def _cmd_index_all(args) -> int:
     print(f"fl index-all: {len(res['ok'])}/{res['considered']} indexed into {args.db} "
           f"({len(res['failed'])} skipped{note}) | {r['edges']} cross-repo edges "
           f"({r['async_edges']} async)")
+    _guidance_report(res.get("guidance"), "fl index-all")
     if partial:
         print(f"  {partial} repo(s) indexed without a call graph, so get_callers/get_callees "
               f"will be empty for them. Run `fl doctor <repo>` to see why.", file=sys.stderr)
     return 0
+
+
+def _guidance_report(g: dict, cmd: str) -> None:
+    """One line for the rules a sweep picked up, and every problem on stderr."""
+    if not g:
+        return
+    print(f"{cmd}: {g['loaded']} guidance rules from {len(g.get('roots') or [])} "
+          f"rulebook(s)" + (f", {g['removed']} withdrawn" if g.get("removed") else "")
+          + (f" — {g['edges']} edges to {g['services']} services" if g.get("edges") else ""))
+    for problem in g.get("problems", []):
+        print(f"  {problem}", file=sys.stderr)
 
 
 def _cmd_resolve(args) -> int:
@@ -355,8 +379,12 @@ def _cmd_enrich(args) -> int:
     from .enrich.providers import ProviderError
 
     kinds = tuple(k.strip() for k in args.kinds.split(",") if k.strip())
-    summary_kinds = tuple(k for k in kinds if k != "gaps")
-    built = _build_llm(args, "fl enrich", need_embed=bool(summary_kinds))
+    summary_kinds = tuple(k for k in kinds if k not in ("gaps", "guidance"))
+    # Guidance is embedded as authored and never summarised, so a run that only does
+    # guidance needs an embedder and no generation model at all.
+    built = _build_llm(args, "fl enrich",
+                       need_embed=bool(summary_kinds) or "guidance" in kinds,
+                       need_llm=bool(summary_kinds) or "gaps" in kinds)
     if built is None:
         return 2
     llm, embedder = built
@@ -373,6 +401,13 @@ def _cmd_enrich(args) -> int:
                 r = resolve(store, store, store)
                 print(f"fl enrich: re-resolved fleet — {r['edges']} service->service edges "
                       f"({r['async_edges']} async)")
+        if "guidance" in kinds:
+            # No LLM call: a rule arrives already written by the person who meant it, so it
+            # is embedded as authored rather than paraphrased.
+            from .guidance import embed_guidance
+            g = embed_guidance(store, embedder)
+            print(f"fl enrich: guidance — {g['embedded']} embedded, "
+                  f"{g['skipped']} unchanged ({g['model']})")
         if summary_kinds:
             eprog = _enrich_printer()
             try:
@@ -400,6 +435,27 @@ def _cmd_doctor(args) -> int:
     rep = run(Path(args.repo) if args.repo else None, args.base_url or "http://localhost:11434")
     print(render(rep))
     return 1 if rep.failed else 0
+
+
+def _guidance_instructions(ctx) -> str:
+    """The line about engineering guidance, or nothing when none is ingested.
+
+    Said here rather than left to the tool's own description, because an agent that does not
+    know fleet-wide standards exist will not go looking for them: it will read the
+    repositories and infer conventions, which during a migration means inferring the one
+    being migrated away from.
+    """
+    try:
+        rules = ctx.store.list_objects("guidance")
+    except Exception:       # noqa: BLE001 - instructions must never fail a server start
+        return ""
+    if not rules:
+        return ""
+    return ("\n\nThis fleet also carries human-authored engineering standards: which "
+            f"libraries, frameworks and patterns to use when writing code here ({len(rules)} "
+            "rules). Call `get_engineering_guidance` BEFORE writing or reviewing code in "
+            "these repositories. Conventions inferred by reading the fleet are the EXISTING "
+            "conventions, which are not always the intended ones.")
 
 
 def _cmd_serve(args) -> int:
@@ -467,7 +523,8 @@ def _cmd_serve(args) -> int:
         "`get_callers`/`get_callees` for blast radius.\n\n"
         "Prefer these over grepping the repositories: grep cannot see across repository "
         "boundaries, and a confident guess about a service boundary is indistinguishable "
-        "from a fact. Every answer here carries evidence and a confidence label."))
+        "from a fact. Every answer here carries evidence and a confidence label."
+        + _guidance_instructions(ctx)))
     register_all(mcp, ctx)
 
     if args.http:
@@ -526,6 +583,7 @@ def main(argv: list[str] | None = None) -> int:
     _llm_args(p, with_embed=True)
     p.add_argument("--kinds", default="interface,service",
                    help="comma list of: interface, service (summaries+embeddings), "
+                        "guidance (embed authored rules; no LLM), "
                         "gaps (LLM-resolve sites the parsers could not; grounded, no embeddings)")
     p.add_argument("--service", default="",
                    help="limit to one service slug, for every kind")

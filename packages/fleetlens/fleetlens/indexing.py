@@ -13,14 +13,21 @@ from pathlib import Path
 from typing import Optional
 
 from .adapters import registry as iface_registry
+from .adapters.deps import declared_dependencies
 from .adapters.hosts import config_hosts, service_identity
+from .adapters.languages import observed_languages
 from .adapters.outbound import discover_outbound as _py_outbound
 from .adapters.ruby_outbound import discover_outbound as _rb_outbound
 from .adapters.ts_outbound import discover_outbound as _ts_outbound
 from .callgraph import cli as cg_cli
 from .loaders import callgraph as cg_loader
 from .loaders import interfaces as iface_loader
-from .manifest import ServiceSpec, resolve_services
+from .manifest import (
+    ServiceSpec,
+    find_manifest,
+    guidance_roots,
+    resolve_services,
+)
 from .store.models import KnowledgeObject
 from .store.sqlite import SqliteStore
 
@@ -66,9 +73,22 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
     is happening looks indistinguishable from one that has hung.
     """
     repo = Path(repo).resolve()
-    specs = resolve_services(repo, default_name=slug)
-    return [index_service(repo, spec, store, default_language=language, llm=llm,
-                          progress=progress, stats=stats) for spec in specs]
+    out = [index_service(repo, spec, store, default_language=language, llm=llm,
+                         progress=progress, stats=stats)
+           for spec in resolve_services(repo, default_name=slug)]
+    # A repo may declare rules as well as, or instead of, code. Withdrawal is scoped to the
+    # rulebooks this call read, so indexing one repo never retires another's rules.
+    roots = guidance_roots(repo)
+    if roots:
+        from .guidance import ingest_roots
+        out.append({"slug": repo.name, "guidance": ingest_roots(store, roots)})
+    else:
+        # Guidance is joined to services by what each service declares, so re-indexing a
+        # service changes the join even though no rule changed. Linking only when rules are
+        # ingested left an ordering trap: index a service after the rulebook and its edges
+        # never appear. Milliseconds, so there is no reason to make the caller remember.
+        _relink(store)
+    return out
 
 
 def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "auto",
@@ -120,6 +140,16 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
                         for c in calls]
             # Service addresses this repo declares in config. Generic twelve-factor
             # convention; which service each address denotes is decided by the resolvers.
+            # Declared dependencies, for matching a service against authored guidance. Read
+            # from the manifest rather than from import sites: a manifest names packages in a
+            # global namespace, and some ecosystems barely import their dependencies by name.
+            with tick("declared dependencies"):
+                dependencies = declared_dependencies(root)
+                # What the service is written in, counted from its own files. The declared
+                # language picks an indexer and is one value; this answers a different
+                # question and a monorepo answers it with more than one.
+                languages = observed_languages(root)
+
             with tick("config hosts + identity"):
                 host_bindings = [{"key": b.key, "host": b.host, "port": b.port,
                                   "value": b.value, "file": b.file} for b in config_hosts(root)]
@@ -135,7 +165,8 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
         + [asdict(sk) for sk in skipped_out]
     return {"slug": slug, "root": root, "spec": spec, "outbound": outbound,
             "host_bindings": host_bindings, "identity": identity, "skipped": skipped,
-            "call_graph_ok": call_graph_ok}
+            "dependencies": dependencies, "languages": languages,
+            "language": language, "call_graph_ok": call_graph_ok}
 
 
 def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats=None) -> dict:
@@ -167,7 +198,12 @@ def _load_service(x: dict, store: SqliteStore, *, llm=None, progress=None, stats
                  "interface_count": iface_summary.get("interfaces", 0),
                  "outbound": x["outbound"], "host_bindings": x["host_bindings"],
                  "declared_hosts": dict(spec.hosts or {}), "identity": x["identity"],
-                 "root": str(root), "skipped": x["skipped"]}))
+                 "root": str(root), "skipped": x["skipped"],
+                 "dependencies": x.get("dependencies", []),
+                 # Declared: the one value that picked the SCIP indexer. Observed: what
+                 # the files say, which is what a rule scoped to a language matches on.
+                 "language": x.get("language", "auto"),
+                 "languages": x.get("languages", [])}))
     store.commit()
 
     summary["slug"] = slug
@@ -202,9 +238,25 @@ def index_service(repo: Path, spec: ServiceSpec, store: SqliteStore, *,
     return _load_service(x, store, llm=llm, progress=progress, stats=stats)
 
 
+def _relink(store) -> None:
+    """Recompute guidance edges, if the index holds any guidance at all."""
+    try:
+        if not store.list_objects("guidance"):
+            return
+        from .guidance import link
+        link(store)
+    except Exception:       # noqa: BLE001 - a failed relink must not fail an index
+        pass
+
+
 def _looks_like_repo(d: Path) -> bool:
     if not d.is_dir() or d.name.startswith(".") or d.name in _SKIP:
         return False
+    # A fleetlens.yaml is the strongest marker there is: the repo has been told what it is.
+    # Checked first, and separately, because a rulebook holds no source at all and would
+    # otherwise be passed over by every test below it.
+    if find_manifest(d) is not None:
+        return True
     # any source we can index, or a VCS/manifest marker. Every supported language needs a
     # marker here: Ruby support was added without one, so a Rails app with no .git
     # directory was silently passed over by a fleet sweep.
@@ -234,6 +286,14 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
     base_dir = Path(base_dir).resolve()
     repos = sorted(d for d in base_dir.iterdir() if _looks_like_repo(d))
     ok, failed = [], []
+    # Rulebooks are collected across the whole sweep and ingested once at the end. A sweep
+    # has seen every rulebook there is, so it is the only caller entitled to withdraw a rule
+    # that has disappeared.
+    books = [root for repo in repos for root in guidance_roots(repo)]
+    # A repo that declares only rules has nothing to index, so counting it among the repos
+    # considered would report a rulebook as a repository the sweep failed to index.
+    rulebooks_only = [d for d in repos if guidance_roots(d) and not resolve_services(d)]
+    repos = [d for d in repos if d not in rulebooks_only]
 
     def extract(repo: Path) -> tuple:
         """(repo, extracted-services, error). Runs on a worker; touches no store."""
@@ -262,12 +322,24 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
             for r in rs:
                 progress("repo-done", r)
 
+    def finish() -> dict:
+        ok.sort(key=lambda s: s["slug"])
+        failed.sort()
+        out = {"ok": ok, "failed": failed, "considered": len(repos),
+               "rulebooks": len(rulebooks_only)}
+        if books:
+            from .guidance import ingest_roots
+            out["guidance"] = ingest_roots(store, books)   # ingesting relinks
+        else:
+            _relink(store)
+        return out
+
     if jobs <= 1:
         for i, repo in enumerate(repos, 1):
             if progress:
                 progress("repo", {"i": i, "n": len(repos), "slug": repo.name})
             absorb(*extract(repo))
-        return {"ok": ok, "failed": failed, "considered": len(repos)}
+        return finish()
 
     done = 0
     with ThreadPoolExecutor(max_workers=jobs) as pool:
@@ -286,6 +358,4 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
             absorb(repo, extracted, err)
 
     # Summaries in repository order, so the printed report reads the same either way.
-    ok.sort(key=lambda s: s["slug"])
-    failed.sort()
-    return {"ok": ok, "failed": failed, "considered": len(repos)}
+    return finish()
