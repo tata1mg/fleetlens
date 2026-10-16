@@ -121,6 +121,8 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         self._path = None if path == ":memory:" else path
         self._sig = None
         self._vec_cache: dict = {}
+        self._vec_locks: dict = {}
+        self._vec_locks_guard = threading.Lock()
         self._info: Optional[dict] = None
         self._local = threading.local()
         self._generation = 0
@@ -441,6 +443,24 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         hit = self._vec_cache.get(key)
         if hit is not None:
             return hit
+        # One build per key at a time. A block is the whole fleet's vectors, so a cold cache
+        # hit by many tool threads at once would otherwise build it that many times over,
+        # each copy resident together, and the pool is wide enough for that to matter.
+        with self._vec_locks_guard:
+            lock = self._vec_locks.setdefault(key, threading.Lock())
+        with lock:
+            hit = self._vec_cache.get(key)
+            if hit is not None:
+                return hit
+            gen = self._generation
+            block = self._build_vector_block(object_type, model)
+            # A reload while this was reading clears the cache for a reason: these vectors
+            # came from the file that was swapped out. Hand them to this caller, not the next.
+            if self._generation == gen:
+                self._vec_cache[key] = block
+            return block
+
+    def _build_vector_block(self, object_type: str, model: str):
         rows = self._conn.execute(
             "SELECT object_id, vector FROM enrichments WHERE object_type=? AND model=? "
             "ORDER BY object_id;", (object_type, model)).fetchall()
@@ -452,11 +472,8 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
             # Unit rows, so a query only needs its own norm and the comparison is one
             # matrix-vector product.
             norms = _np.linalg.norm(mat, axis=1, keepdims=True)
-            block = (ids, mat / _np.where(norms == 0, 1.0, norms))
-        else:
-            block = (ids, [_unpack(r[1]) for r in rows])
-        self._vec_cache[key] = block
-        return block
+            return (ids, mat / _np.where(norms == 0, 1.0, norms))
+        return (ids, [_unpack(r[1]) for r in rows])
 
     def search(self, vector, object_type, model, limit=5) -> list[tuple[str, float]]:
         ids, mat = self._vector_block(object_type, model)
