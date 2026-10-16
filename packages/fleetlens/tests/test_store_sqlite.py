@@ -170,3 +170,58 @@ def test_a_served_store_can_be_read_from_several_threads(tmp_path):
 
     assert errors == []
     assert seen == [5] * 8
+
+
+def _vector_db(tmp_path):
+    db = tmp_path / "v.db"
+    w = SqliteStore(str(db))
+    for i in range(5):
+        w.upsert_enrichment(f"o{i}", "svc", "m", 3, "", str(i), [1.0, float(i), 0.5])
+    w.commit()
+    w.close()
+    return SqliteStore(str(db), read_only=True)
+
+
+def test_cold_cache_builds_the_vector_block_once(tmp_path):
+    import threading
+    import time
+
+    r = _vector_db(tmp_path)
+    builds = []
+    real = r._build_vector_block
+
+    def slow_build(object_type, model):
+        builds.append(1)
+        time.sleep(0.1)         # long enough that every thread arrives while it runs
+        return real(object_type, model)
+
+    r._build_vector_block = slow_build
+    barrier = threading.Barrier(8)
+    results = []
+
+    def go():
+        barrier.wait()
+        results.append(r.search([1.0, 1.0, 0.5], "svc", "m", 2))
+
+    threads = [threading.Thread(target=go) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(builds) == 1
+    assert len(results) == 8 and all(x == results[0] for x in results)
+
+
+def test_reload_during_build_does_not_cache_the_stale_block(tmp_path):
+    r = _vector_db(tmp_path)
+    real = r._build_vector_block
+
+    def build_then_reload(object_type, model):
+        block = real(object_type, model)
+        r._generation += 1      # the index was swapped while this was reading
+        return block
+
+    r._build_vector_block = build_then_reload
+    ids, _ = r._vector_block("svc", "m")
+    assert len(ids) == 5                     # the caller still gets an answer
+    assert ("svc", "m") not in r._vec_cache  # but the old file's vectors are not kept

@@ -7,7 +7,9 @@ from ._offload import offloaded
 
 def register(mcp, ctx: ServiceContext) -> None:
     @mcp.tool()
-    @offloaded
+    # The one tool measured to get slower with more threads: it returns the whole graph, and
+    # assembling that response is Python dict and list construction, which holds the GIL.
+    @offloaded(cpu_bound=True)
     def get_service_graph(min_confidence: str = "") -> dict:
         """THE WHOLE microservice dependency graph in one call — every service and every
         service-to-service edge across all repositories.
