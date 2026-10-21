@@ -541,10 +541,11 @@ def _cmd_serve(args) -> int:
 
         from .server.http import resolve_token, serve
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-        from .pins import PinPolicy
+        from .pins import PinPolicy, check_pins_dir
         token = resolve_token(args.token_env, args.insecure)
         db_path = str(Path(args.db).expanduser())
         policy = PinPolicy.from_env(args.pins_dir or Path(db_path).parent / "pins")
+        check_pins_dir(db_path, policy.pins_dir)
         serve(mcp, args.host, args.port, token, ctx.store, db_path, policy)
         return 0
 

@@ -31,7 +31,9 @@ log = logging.getLogger(__name__)
 #: Lowercase, URL-safe, and it cannot start with a dot or contain a separator. The alias is
 #: used as a file name and as a URL path segment, so this is what makes escaping the pins
 #: directory impossible rather than merely checked for.
-ALIAS_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+#: Always used with fullmatch: `$` also matches before a trailing newline, which would let
+#: "abc\n" through and create a file with a newline in its name.
+ALIAS_RE = re.compile(r"[a-z0-9][a-z0-9._-]{0,62}")
 
 DEFAULT_RETAIN_DAYS = 30
 DEFAULT_EXTEND_MAX_DAYS = 10
@@ -97,9 +99,12 @@ class PinStore:
     sleeping.
     """
 
-    def __init__(self, policy: PinPolicy, clock=time.time):
+    def __init__(self, policy: PinPolicy, clock=time.time, live_db=None):
         self.policy = policy
         self._clock = clock
+        # The collector must never touch the live index, so the store is told where it is
+        # rather than trusting the caller to keep the two directories apart.
+        self._live_db = Path(live_db).resolve() if live_db else None
 
     # --- paths ------------------------------------------------------------------
     def _db(self, alias: str) -> Path:
@@ -110,7 +115,7 @@ class PinStore:
 
     @staticmethod
     def _check_alias(alias) -> str:
-        if not isinstance(alias, str) or not ALIAS_RE.match(alias):
+        if not isinstance(alias, str) or not ALIAS_RE.fullmatch(alias):
             raise PinError(400, "alias must be 1 to 63 characters of lowercase letters, "
                                 "digits, '.', '_' or '-', starting with a letter or digit")
         return alias
@@ -122,6 +127,12 @@ class PinStore:
             raise PinError(404, f"no pin named {alias!r}") from None
         except ValueError:
             raise PinError(500, f"pin {alias!r} has an unreadable record") from None
+
+    def _read_valid(self, alias: str) -> dict:
+        record = self._read(alias)
+        if not isinstance(record, dict) or not isinstance(record.get("expires_at"), str):
+            raise PinError(500, f"pin {alias!r} has an unreadable record")
+        return record
 
     def _write(self, alias: str, record: dict) -> None:
         # temp file then rename, so a reader never sees half a sidecar
@@ -153,7 +164,9 @@ class PinStore:
         with _CREATE_LOCK:
             if final.exists() or self._meta(alias).exists():
                 raise PinError(409, f"a pin named {alias!r} already exists")
-            src = sqlite3.connect(f"file:{source_db}?mode=ro", uri=True)
+            # as_uri() escapes ?, # and % in the path; interpolating the raw path would not
+            uri = Path(source_db).resolve().as_uri() + "?mode=ro"
+            src = sqlite3.connect(uri, uri=True)
             try:
                 try:
                     row = src.execute("SELECT value FROM meta WHERE key = 'build_id'").fetchone()
@@ -189,11 +202,18 @@ class PinStore:
     def list(self) -> list:
         pins = []
         for path in sorted(self.policy.pins_dir.glob("*.json")):
+            # One bad sidecar must not take the listing down for every caller, so all of
+            # the validation and the sort key happen inside the try.
             try:
-                pins.append(self._with_days_left(json.loads(path.read_text())))
-            except (ValueError, KeyError, OSError):
+                record = json.loads(path.read_text())
+                if not isinstance(record, dict):
+                    raise ValueError("record is not an object")
+                if not all(isinstance(record.get(k), str) for k in ("created_at", "expires_at")):
+                    raise ValueError("record lacks created_at or expires_at")
+                pins.append((record["created_at"], self._with_days_left(record)))
+            except (ValueError, KeyError, TypeError, OSError):
                 log.warning("skipping unreadable pin record %s", path)
-        return sorted(pins, key=lambda r: r["created_at"])
+        return [r for _, r in sorted(pins, key=lambda t: t[0])]
 
     def extend(self, alias, days) -> dict:
         """Add `days` to the pin's current expiry. The cap applies to each call."""
@@ -201,15 +221,21 @@ class PinStore:
         cap = self.policy.extend_max_days
         if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= cap:
             raise PinError(422, f"days must be a whole number from 1 to {cap}")
-        record = self._read(alias)
-        expires = datetime.fromisoformat(record["expires_at"]) + timedelta(days=days)
+        record = self._read_valid(alias)
+        try:
+            expires = datetime.fromisoformat(record["expires_at"]) + timedelta(days=days)
+        except ValueError:
+            raise PinError(500, f"pin {alias!r} has an unreadable record") from None
         record["expires_at"] = expires.isoformat(timespec="seconds")
         self._write(alias, record)
         return self._with_days_left(record)
 
     def delete(self, alias) -> None:
         self._check_alias(alias)
-        self._read(alias)       # 404 when absent
+        # Existence of the sidecar is enough: a pin whose record is corrupt must still be
+        # removable through the API, otherwise only a person with shell access can clear it.
+        if not self._meta(alias).exists():
+            raise PinError(404, f"no pin named {alias!r}")
         self._db(alias).unlink(missing_ok=True)
         self._meta(alias).unlink(missing_ok=True)
 
@@ -240,9 +266,17 @@ class PinStore:
                      alias, record.get("build_id"), record["expires_at"])
             removed.append(alias)
         for stray in [*d.glob("*.db"), *d.glob("*.tmp")]:
-            # stem, not a split on the first dot: aliases may contain dots
-            if stray.suffix == ".db" and (d / f"{stray.stem}.json").exists():
+            # Only remove what can be attributed to a pin. The directory may be shared with
+            # something else, and the live index must never be a candidate.
+            if self._live_db is not None and stray.resolve() == self._live_db:
                 continue
+            # stem, not a split on the first dot: aliases may contain dots
+            if stray.suffix == ".db":
+                if not ALIAS_RE.fullmatch(stray.stem) or (d / f"{stray.stem}.json").exists():
+                    continue
+            elif (not stray.name.endswith((".db.tmp", ".json.tmp"))
+                  or not ALIAS_RE.fullmatch(Path(stray.stem).stem)):
+                continue    # a .tmp this module did not create (`<alias>.db.tmp`, `.json.tmp`)
             try:
                 age = now - stray.stat().st_mtime
             except OSError:
@@ -252,3 +286,15 @@ class PinStore:
                 log.info("removed orphan snapshot file %s", stray.name)
                 removed.append(stray.name)
         return removed
+
+
+def check_pins_dir(db_path, pins_dir) -> None:
+    """Refuse a pins directory that holds the live index.
+
+    The collector scans the whole directory, so sharing it with the live database puts that
+    database in reach of the sweep. Failing at start is cheaper than losing the index.
+    """
+    db, d = Path(db_path).resolve(), Path(pins_dir).resolve()
+    if d == db.parent or d in db.parents:
+        raise SystemExit(f"fl serve: --pins-dir {d} contains the live index {db}. "
+                         "Use a separate directory for pins.")

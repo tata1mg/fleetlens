@@ -285,3 +285,76 @@ def test_sidecar_carries_the_documented_fields(tmp_path):
     _store(tmp_path).create(str(db), "p", "why", "me")
     rec = json.loads((tmp_path / "pins" / "p.json").read_text())
     assert set(rec) == {"alias", "build_id", "reason", "owner", "created_at", "expires_at"}
+
+
+@pytest.mark.parametrize("alias", ["abc\n", "\nabc"])
+def test_alias_with_a_newline_is_rejected_and_nothing_is_written(tmp_path, alias):
+    """`$` matches before a trailing newline; the alias must be matched in full."""
+    db, _ = _live(tmp_path)
+    ps = _store(tmp_path)
+    for op in (lambda: ps.create(str(db), alias, "", ""),
+               lambda: ps.extend(alias, 1),
+               lambda: ps.delete(alias)):
+        with pytest.raises(PinError) as exc:
+            op()
+        assert exc.value.status == 400
+    pins_dir = tmp_path / "pins"
+    assert not pins_dir.exists() or list(pins_dir.iterdir()) == []
+
+
+def test_collect_leaves_the_live_index_alone_when_it_shares_the_directory(tmp_path):
+    db, live = _live(tmp_path)
+    live.close()
+    os.utime(db, (1_700_000_000, 1_700_000_000))
+    ps = PinStore(PinPolicy(tmp_path), _Clock(), live_db=db)
+    assert ps.collect() == []
+    assert db.exists()
+
+
+def test_collect_leaves_unrelated_files_alone(tmp_path):
+    clock = _Clock()
+    ps = _store(tmp_path, clock)
+    d = tmp_path / "pins"
+    d.mkdir()
+    names = ("Other Thing.db", "notes.tmp", "other.db.bak", "UPPER.db")
+    for name in names:
+        (d / name).write_bytes(b"x")
+        os.utime(d / name, (clock.now - 7200, clock.now - 7200))
+    assert ps.collect() == []
+    assert sorted(p.name for p in d.iterdir()) == sorted(names)
+
+
+def test_serve_refuses_a_pins_dir_that_holds_the_live_index(tmp_path):
+    from fleetlens.pins import check_pins_dir
+    db = tmp_path / "data" / "fleet.db"
+    db.parent.mkdir()
+    with pytest.raises(SystemExit, match="live index"):
+        check_pins_dir(db, db.parent)
+    with pytest.raises(SystemExit, match="live index"):
+        check_pins_dir(db, tmp_path)
+    check_pins_dir(db, db.parent / "pins")      # a sibling subdirectory is fine
+
+
+def test_a_malformed_sidecar_does_not_break_list_and_can_be_deleted(tmp_path):
+    db, _ = _live(tmp_path)
+    ps = _store(tmp_path)
+    ps.create(str(db), "good", "", "")
+    d = tmp_path / "pins"
+    (d / "arr.json").write_text("[]")
+    (d / "arr.db").write_bytes(b"x")
+    (d / "nodate.json").write_text(json.dumps({"alias": "nodate", "expires_at": "2030-01-01T00:00:00+00:00"}))
+    assert [p["alias"] for p in ps.list()] == ["good"]
+    for alias in ("arr", "nodate"):
+        ps.delete(alias)
+        assert not (d / f"{alias}.json").exists()
+    assert not (d / "arr.db").exists()
+    assert [p["alias"] for p in ps.list()] == ["good"]
+
+
+def test_create_works_when_the_path_has_uri_special_characters(tmp_path):
+    odd = tmp_path / "a?b#c%d"
+    odd.mkdir()
+    db, live = _live(odd)
+    live.close()
+    pin = _store(tmp_path).create(str(db), "odd", "", "")
+    assert pin["alias"] == "odd"

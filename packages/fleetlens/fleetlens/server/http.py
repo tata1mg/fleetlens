@@ -166,8 +166,10 @@ def serve(mcp, host: str, port: int, token: str, store, db_path: str, pins) -> N
     # Not added to PUBLIC_PATHS: the auth middleware below covers these like /mcp.
     from ..pins import PinStore
     from .admin import pin_routes
-    pin_store = PinStore(pins)
+    pin_store = PinStore(pins, live_db=db_path)
     app.router.routes.extend(pin_routes(db_path, pin_store))
+    if not token:
+        log.warning("pin management (/pins) is unauthenticated because --insecure is set")
     start_pin_collector(pin_store, threading.Event())
     # Order matters: middleware added last runs first, so reject unauthenticated callers
     # before doing any work on their behalf.
