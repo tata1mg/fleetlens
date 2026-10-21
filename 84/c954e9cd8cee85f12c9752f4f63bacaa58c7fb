@@ -1,7 +1,11 @@
 README.md
   s_d5ea2fae8a9c21::t_2e07d839f9a3b2 402-404,408,414,417-418,421-423,425-426
+  s_d5ea2fae8a9c21::t_d7bdd42d059be3 402-404,408,414,417-418,421-423,425-426
 docs/pinning.md
   s_d5ea2fae8a9c21::t_7af4b3796f4495 1-187
+  s_d5ea2fae8a9c21::t_edd77c041d384a 143-154
+  s_d5ea2fae8a9c21::t_5d762f445017f3 1-62,66-142,155-187
+  s_d5ea2fae8a9c21::t_87369dceb3de9a 63-65
 ---
 {
   "schema_version": "authorship/3.0.0",
