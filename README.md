@@ -7,7 +7,7 @@
 [![Status](https://img.shields.io/badge/status-early-orange.svg)](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md)
 [![MCP](https://img.shields.io/badge/MCP-native-5A4FCF.svg)](https://modelcontextprotocol.io)
 
-Your coding agent can read one repository. Your system is forty of them.
+Your coding agent can read one repository. Your system does not fit in one.
 
 Ask an agent what breaks if you change `POST /orders` and it greps the repository in front of
 it, finds nothing, and answers from inference. That failure is hard to spot, because a
@@ -451,7 +451,8 @@ symbols, because each lookup goes through a database index rather than reading e
 
 Two rows are slower, and both for reasons worth stating. `get_service_graph` hands back the
 entire dependency graph in one response, so it is slow because the answer is large. It exists
-because asking the same question the other way round took between 18 and 26 separate calls.
+because on the benchmark corpus, asking the same question the other way round took between
+18 and 26 separate calls.
 And `find_symbol` has to read every symbol when the search term matches nothing, because a
 substring search cannot use a database index. A term that does match comes back in about six
 milliseconds. Fixing that is the next thing on
