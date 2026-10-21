@@ -403,61 +403,31 @@ slower rather than faster.
 
 ## Pinning an index for a repeatable evaluation
 
-The live index is rebuilt on a schedule. To run an evaluation against data that holds
-still, pin the index: the server takes a consistent snapshot (SQLite `VACUUM INTO`, so it is
-safe while a build is running) and keeps it for a limited time.
+The index is rebuilt on a schedule, which is wrong when you are measuring something: if it
+changes between two runs, a difference in the result cannot be attributed to the change you
+made. Pinning freezes a copy and serves it at its own URL.
 
 ```bash
 export FLEETLENS_URL=http://fleetlens.internal:8081
-export FLEETLENS_TOKEN=...             # the same shared token the server uses
+export FLEETLENS_TOKEN=...                       # the team's shared token
 
 fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 # pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
-fl pin list
-fl pin extend eval-q4 --days 5
-fl unpin eval-q4                       # same as: fl pin delete eval-q4
 ```
 
-Record the `build_id` from `get_index_info` with each result so an answer can be traced to
-the index that produced it; `repositories` in the same response gives the git commit each
-repository was built from.
-
-The server decides how long a pin lives, so `create` takes no duration. Settings on the
-server:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `FLEETLENS_RETAIN_PINNED_DAYS` | 30 | Lifetime of a new pin |
-| `FLEETLENS_PIN_EXTEND_MAX_DAYS` | 10 | Most days one `extend` may add |
-
-Snapshots live in `--pins-dir` (default: a `pins/` directory next to `--db`), which must be
-writable by the server. Expired pins are removed at startup, hourly, and when pins are
-listed. The same operations are plain HTTP on the server's port, behind the same bearer
-token: `GET /pins`, `POST /pins`, `PATCH /pins/<alias>`, `DELETE /pins/<alias>`.
-
-The client reads the server address and token from `--url` and `--token`, then
-`FLEETLENS_URL` and `FLEETLENS_TOKEN`, then `url` and `token` in
-`~/.config/fleetlens/config.toml` (or under `$XDG_CONFIG_HOME`). It needs nothing beyond a
-base `pip install fleetlens`.
-
-A pin is served by the same server, at its own URL. Point a client there instead of at
-`/mcp` and nothing else changes: same tools, same token, same responses, answered from the
-snapshot:
+Point a client at the pin instead of the live server and nothing else changes:
 
 ```
-http://<host>:8081/mcp                      # always the newest index
-http://<host>:8081/pins/harness-eval/mcp    # that snapshot, until it expires
+http://fleetlens.internal:8081/mcp               # always the newest index
+http://fleetlens.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
 ```
 
-`get_index_info` reports which index answered, as `serving`, alongside the build id. Record
-the two together and a result stays attributable after the index has moved on.
+`fl pin list`, `fl pin extend` and `fl unpin` manage them. The commands are a convenience
+over plain HTTP on the same port and token, so curl works just as well and installing the
+CLI is optional.
 
-How many pinned indexes stay open at once is capped by `FLEETLENS_MAX_OPEN_PINS` (default
-3). Each open pin holds its own vector block, roughly 92 MB for 15,000 enriched interfaces
-at 1536 dimensions, so the cap is a memory bound rather than a hint. The first semantic
-search against a freshly opened pin pays about 280 ms to build that block; the rest are
-sub-millisecond. A pin that is being served is skipped by the collector even once it has
-expired, and removed on a later sweep.
+Full guide, including what to record so a result stays attributable and what an operator
+needs to configure: [docs/pinning.md](docs/pinning.md).
 
 ## Roadmap
 
