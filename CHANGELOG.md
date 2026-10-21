@@ -1,5 +1,90 @@
 # Changelog
 
+## 0.2.0
+
+Pin an index, so an agent evaluation can be reproduced.
+
+The index is a snapshot, and on a server that reindexes on a schedule it moves constantly.
+That is right day to day and wrong when you are measuring something: if the index changes
+between two runs, a difference in the result cannot be attributed to the change you made.
+
+### Pinning
+
+```bash
+fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+# pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
+```
+
+```
+http://<host>:8081/mcp               # always the newest index
+http://<host>:8081/pins/eval-q4/mcp  # that snapshot, until it expires
+```
+
+Same tools, same token, same responses, answered from the snapshot. One MCP server serves
+both, so there is no second process to run and no port to allocate.
+
+- **`fl pin create | list | extend | delete`**, and `fl unpin` as an alias for delete. A
+  thin stdlib client over plain HTTP, so curl works just as well and installing the CLI is
+  optional. A base `pip install` needs none of the indexing toolchain.
+- **Admin routes** `GET/POST /pins` and `PATCH/DELETE /pins/<alias>`, on the existing port
+  and bearer token. Deliberately not MCP tools: an agent would carry pin management in its
+  tool list and eventually call it.
+- **Snapshots are taken with `VACUUM INTO`** from a read-only connection, so they are
+  consistent even while a build is running, and the source needs no write access.
+- **Retention is server-controlled**, so one person cannot opt out of the policy the
+  deployment's owner set. `fl pin create` takes no duration.
+
+| | default | setting |
+|---|---|---|
+| a pin lives for | 30 days | `FLEETLENS_RETAIN_PINNED_DAYS` |
+| one extension adds | up to 10 days | `FLEETLENS_PIN_EXTEND_MAX_DAYS` |
+| pins served at once | 3 | `FLEETLENS_MAX_OPEN_PINS` |
+
+### Build identity
+
+Every index now records a build id, when it was built, the schema version, the fleetlens
+version, and the git SHA of each indexed repository. `get_index_info` returns them, plus
+`repositories` and a `serving` field saying whether the answer came from the live index or a
+pin. Record those with a result and it stays attributable after the index has moved on.
+
+An index built before this release reports null build fields rather than failing, but it
+cannot be pinned until it is re-indexed.
+
+### Also
+
+- `fl enrich --kinds guidance` no longer requires a generation model to be installed. It
+  embeds authored rules and calls no model that generates anything.
+- A new CI job installs with no extras and asserts that importing the CLI pulls in none of
+  mcp, numpy, tree-sitter, starlette or uvicorn, so the client stays installable on its own.
+
+### Measured
+
+Serving a pin costs a context-variable read and a dictionary lookup per tool call, 54 ns
+against a tool latency of 3 to 100 ms.
+
+The cost that matters is memory: each open pin holds its own vector block, measured at 92 MB
+for 15,000 enriched interfaces at 1536 dimensions, built in about 280 ms on first use and
+sub-millisecond after. That is why the number of pins served at once is a hard cap rather
+than a hint. SQLite connections are per store per thread, so the count is stores times
+threads.
+
+### Known limits
+
+- **No per-pin disk quota.** A pin is a full copy of the index, and with one shared token
+  anyone can fill the disk. Retention bounds pins in time, not in size.
+- **No locking** between `extend`, `delete` and `collect`. An extend racing the collector on
+  an expired pin can leave a record with no snapshot.
+- **`owner` is a label, not authentication.** One shared token means anyone can delete
+  anyone's pin.
+- **Expiry runs only while the server is up.** Sweeps happen at startup, hourly, and on
+  `GET /pins`. There is no cron or timer.
+- **Docker's `/data` mount is read-only**, so the default pins directory is not writable
+  there. Add a writable volume and point `--pins-dir` at it.
+- You can only pin the index that is current when you ask. Builds that have been replaced
+  are not kept.
+
+Guide: [docs/pinning.md](docs/pinning.md).
+
 ## 0.1.0
 
 The first release. fleetlens derives a cross-repository service graph from source and serves
