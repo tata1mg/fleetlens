@@ -1,0 +1,47 @@
+docs/deployment.md
+  s_d5ea2fae8a9c21::t_5d8ac0de97a0f3 52
+  s_d5ea2fae8a9c21::t_758c9f8732831d 72-73,76-78,113-114,116
+docker-compose.yml
+  s_d5ea2fae8a9c21::t_e2dfcc7e71b4b4 35-37,40,47
+README.md
+  s_d5ea2fae8a9c21::t_5d8ac0de97a0f3 124-126
+  s_d5ea2fae8a9c21::t_062925ee57aba6 471-475
+  s_d5ea2fae8a9c21::t_fdf57429752da0 5,390-391,457-458,460-461
+  s_d5ea2fae8a9c21::t_ff004b3142cdd4 401-423
+  s_d5ea2fae8a9c21::t_2a8ae804d154a1 7,100,503,507
+  s_d5ea2fae8a9c21::t_0ac788b4b62bbb 56-57,73-80,84
+  s_d5ea2fae8a9c21::t_3eae6cb0049e3f 55
+  s_d5ea2fae8a9c21::t_aad4cdf10fc2de 254-255,259-262
+  s_d5ea2fae8a9c21::t_c1bcd3787f31d2 382
+  s_d5ea2fae8a9c21::t_e0e415009323da 41-49,336-358,376-381,383-385
+SECURITY.md
+  s_d5ea2fae8a9c21::t_9b7b1c5c53962e 19-37
+docs/pinning.md
+  s_d5ea2fae8a9c21::t_b7304b09692d18 11-18
+  s_d5ea2fae8a9c21::t_24e6154b452f75 119
+BENCHMARK.md
+  s_d5ea2fae8a9c21::t_5d8ac0de97a0f3 48-50
+  s_d5ea2fae8a9c21::t_e2dfcc7e71b4b4 278-281
+CHANGELOG.md
+  s_d5ea2fae8a9c21::t_5cd4142df634a0 103
+ROADMAP.md
+  s_d5ea2fae8a9c21::t_19b4c767df74ec 8-12,14-15,50-52
+  s_d5ea2fae8a9c21::t_5cd4142df634a0 17-20
+  s_d5ea2fae8a9c21::t_b7304b09692d18 28-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20251736541d57e36eae537f8cce1657023dee54",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
