@@ -11,12 +11,16 @@ mechanism the team already runs for context-service, so there is nothing new to 
 It does not identify individual engineers and it does not support rotation without a
 restart. If you need either, replace `BearerAuth` with your identity provider's middleware;
 nothing else in the server knows how the caller was authenticated.
+
+The pin admin routes (/pins, see server/admin.py) are served on the same port and are
+behind the same token. Only /healthz is public.
 """
 from __future__ import annotations
 
 import logging
 import os
 import secrets
+import threading
 
 log = logging.getLogger(__name__)
 
@@ -114,8 +118,38 @@ def security_settings(host: str, allowed_hosts: list):
     return TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 
-def serve(mcp, host: str, port: int, token: str, store) -> None:
-    """Run the FastMCP streamable-HTTP app under uvicorn."""
+#: How often expired pins are swept. Hourly is plenty: expiry is counted in days.
+_COLLECT_INTERVAL_SECONDS = 3600
+
+
+def start_pin_collector(pins, stop: threading.Event,
+                        interval: float = _COLLECT_INTERVAL_SECONDS) -> threading.Thread:
+    """Sweep expired pins now and then every `interval` seconds until `stop` is set.
+
+    A daemon thread, so it never holds the process open. It waits on the event rather than
+    sleeping so a test can stop it promptly.
+    """
+    def loop() -> None:
+        while True:
+            try:
+                pins.collect()
+            except Exception:  # noqa: BLE001 - a failed sweep must not end the schedule
+                log.exception("pin collection failed")
+            if stop.wait(interval):
+                return
+
+    thread = threading.Thread(target=loop, name="pin-collector", daemon=True)
+    thread.start()
+    return thread
+
+
+def serve(mcp, host: str, port: int, token: str, store, db_path: str, pins,
+          registry=None) -> None:
+    """Run the FastMCP streamable-HTTP app under uvicorn.
+
+    `pins` is a pins.PinPolicy; `db_path` is the live index that pins are snapshots of.
+    `registry`, when given, also serves each pin at /pins/<alias>/mcp off the same MCP
+    server; see server/routing.py for why one server rather than one per pin."""
     try:
         import uvicorn
     except ImportError:  # pragma: no cover
@@ -132,6 +166,27 @@ def serve(mcp, host: str, port: int, token: str, store) -> None:
         return JSONResponse({"status": "ok", **store.index_info()})
 
     app.router.routes.append(Route("/healthz", healthz, methods=["GET"]))
+
+    if registry is not None:
+        # The MCP endpoint FastMCP already built, mounted a second time under each pin.
+        # Starlette's {alias} never matches across a slash, so this cannot collide with the
+        # admin routes below, and an alias containing a slash cannot exist anyway.
+        from .routing import alias_scoped
+        mcp_endpoint = next(r for r in app.router.routes
+                            if getattr(r, "path", None) == mcp.settings.streamable_http_path)
+        app.router.routes.append(
+            Route("/pins/{alias}/mcp", endpoint=alias_scoped(mcp_endpoint.app, registry)))
+    # Not added to PUBLIC_PATHS: the auth middleware below covers these like /mcp.
+    from ..pins import PinStore
+    from .admin import pin_routes
+    pin_store = PinStore(pins, live_db=db_path,
+                         # A pin being served must not vanish under an open connection, so
+                         # the collector skips whatever the registry currently holds open.
+                         in_use=(registry.open_aliases if registry is not None else None))
+    app.router.routes.extend(pin_routes(db_path, pin_store))
+    if not token:
+        log.warning("pin management (/pins) is unauthenticated because --insecure is set")
+    start_pin_collector(pin_store, threading.Event())
     # Order matters: middleware added last runs first, so reject unauthenticated callers
     # before doing any work on their behalf.
     app.add_middleware(build_reload_middleware(store))

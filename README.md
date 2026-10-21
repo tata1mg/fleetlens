@@ -401,6 +401,34 @@ runs at most two tool calls at a time by default, because most of the work is bu
 response in Python rather than waiting on the disk, and allowing more turned out to be
 slower rather than faster.
 
+## Pinning an index for a repeatable evaluation
+
+The index is rebuilt on a schedule, which is wrong when you are measuring something: if it
+changes between two runs, a difference in the result cannot be attributed to the change you
+made. Pinning freezes a copy and serves it at its own URL.
+
+```bash
+export FLEETLENS_URL=http://fleetlens.internal:8081
+export FLEETLENS_TOKEN=...                       # the team's shared token
+
+fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+# pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
+```
+
+Point a client at the pin instead of the live server and nothing else changes:
+
+```
+http://fleetlens.internal:8081/mcp               # always the newest index
+http://fleetlens.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
+```
+
+`fl pin list`, `fl pin extend` and `fl unpin` manage them. The commands are a convenience
+over plain HTTP on the same port and token, so curl works just as well and installing the
+CLI is optional.
+
+Full guide, including what to record so a result stays attributable and what an operator
+needs to configure: [docs/pinning.md](docs/pinning.md).
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md).

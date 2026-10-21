@@ -6,6 +6,7 @@ Deterministic, no LLM. Multi-repo is resilient: one repo failing never aborts th
 from __future__ import annotations
 
 import json
+import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -59,6 +60,19 @@ def _has(repo: Path, pattern: str) -> bool:
     return False
 
 
+def _git_head(repo: Path) -> Optional[str]:
+    """The commit a checkout is at, or None. Never raises: a directory that is not a git
+    repository, a missing git binary or a hung command must not fail an index run, they
+    only mean the build cannot say which commit it came from."""
+    try:
+        res = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    sha = res.stdout.strip()
+    return sha if res.returncode == 0 and sha else None
+
+
 def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
                language: str = "auto", llm=None, progress=None, stats=None) -> list[dict]:
     """Index every service a repo declares (via fleetlens.yaml), or the repo itself as one
@@ -88,6 +102,9 @@ def index_repo(repo: Path, store: SqliteStore, *, slug: Optional[str] = None,
         # ingested left an ordering trap: index a service after the rulebook and its edges
         # never appear. Milliseconds, so there is no reason to make the caller remember.
         _relink(store)
+    # Keyed by directory name, not service slug: one repository can declare several services.
+    store.stamp_build({repo.name: _git_head(repo)})
+    store.commit()
     return out
 
 
@@ -293,6 +310,7 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
     base_dir = Path(base_dir).resolve()
     repos = sorted(d for d in base_dir.iterdir() if _looks_like_repo(d))
     ok, failed = [], []
+    built: dict = {}    # repo directory name -> sha, for repos that loaded cleanly
     # Rulebooks are collected across the whole sweep and ingested once at the end. A sweep
     # has seen every rulebook there is, so it is the only caller entitled to withdraw a rule
     # that has disappeared.
@@ -325,6 +343,7 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
                 progress("repo-failed", {"slug": repo.name, "error": str(exc)})
             return
         ok.extend(rs)
+        built[repo.name] = _git_head(repo)
         if progress:
             for r in rs:
                 progress("repo-done", r)
@@ -339,6 +358,9 @@ def index_all(base_dir: Path, store: SqliteStore, *, language: str = "auto", llm
             out["guidance"] = ingest_roots(store, books)   # ingesting relinks
         else:
             _relink(store)
+        # One stamp for the whole sweep: it is one build, whatever order repos finished in.
+        store.stamp_build(built)
+        store.commit()
         return out
 
     if jobs <= 1:

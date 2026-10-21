@@ -49,8 +49,9 @@ Roughly in order of how often we expect it to matter:
 2. **A public benchmark corpus**, so the numbers can be reproduced by someone who does not
    work here. This is the single biggest weakness in the current evidence.
 3. **gRPC and GraphQL interfaces.**
-4. **Index metadata**: schema version, the git SHA of each indexed repository, and a
-   server that refuses an index newer than it understands.
+4. **Refuse an index newer than the server understands.** The build id, schema version,
+   fleetlens version and per-repository git SHA are recorded in every index and reported by
+   `get_index_info`; what remains is acting on the schema version at startup.
 5. **Pruning on re-index**, so a removed service leaves no orphans behind.
 6. **A full-text index over symbol ids.** `find_symbol` answers in about 6 ms when a term
    matches, and takes a full scan when nothing does, because `LIKE '%x%'` cannot use a
