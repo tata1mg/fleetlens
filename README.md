@@ -128,6 +128,53 @@ fl export-graph --db fleet.db -o mesh.html   # self-contained HTML render, no se
 
 ---
 
+## What you get
+
+Those are what an agent calls. These are the things you use directly.
+
+### A context you can freeze, so an experiment is repeatable
+
+The index is rebuilt on a schedule, which is what you want day to day and exactly wrong the
+moment you are measuring something. Change a prompt, rerun the agent, get a different answer,
+and you cannot tell whether your change did it or the index moved underneath you.
+
+Pinning freezes a copy of the index and serves it at its own URL, so you can come back
+tomorrow and get the same answers:
+
+```bash
+fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+# pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
+```
+
+```
+http://fleetlens.internal:8081/mcp               # always the newest index
+http://fleetlens.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
+```
+
+Same tools, same token, same responses, and an alias that does not exist returns 404 rather
+than quietly falling back to the live index. `fl pin list`, `fl pin extend` and `fl unpin`
+manage them, and all four are a thin convenience over plain HTTP on the same port, so curl
+works just as well from CI.
+
+Every answer also carries the build id, the schema version and the commit each repository was
+at, through `get_index_info`, so a measurement stays attributable after the pin has expired.
+[Full guide](https://github.com/tata1mg/fleetlens/blob/main/docs/pinning.md).
+
+### The graph as a file, with no server
+
+`fl export-graph` writes the whole dependency graph to a self-contained HTML file. Nothing to
+install and nothing to run for whoever opens it, which is usually the point when the audience
+is a review or an architecture discussion rather than an agent.
+
+### Your team's standards, not just the ones it inferred
+
+`get_engineering_guidance` serves human-written rules about which libraries, frameworks and
+patterns to use in this fleet. Conventions derived by reading a codebase are the conventions
+that exist, which are not always the ones you want new code to follow, so these are authored
+rather than inferred.
+
+---
+
 ## How it works
 
 Three layers. Each is optional on top of the one before it, and the first needs no LLM, no API
@@ -160,7 +207,8 @@ HTTP `calls`. There are two deterministic sources:
 The channel name is the cross-repo join key: a publisher and a consumer of the same channel
 in different repos become one edge.
 
-### Rails
+<details>
+<summary>Rails routing, in detail</summary>
 
 Rails declares routes in a DSL rather than per-handler decorators, so the adapter interprets
 that DSL. `namespace` and `scope` contribute path prefixes, `resources` expands into the
@@ -173,6 +221,7 @@ Routes are usually split across files that `config/routes.rb` pulls in with `ext
 
 `to: 'orders#index'` is resolved to `app/controllers/orders_controller.rb`, so Rails endpoints
 trace into code through `get_endpoint_call_graph` even without a call graph.
+</details>
 
 ### Service addresses from config, and pluggable host resolution
 
@@ -402,19 +451,17 @@ A controlled study on one private 16 service corpus. One coding agent, 12 questi
 spanning several repositories, run with and without the fleetlens MCP server available and
 everything else held constant: 24 runs per arm, 2 repetitions per question per arm.
 
-| | baseline | with fleetlens |
-|---|---|---|
-| F1 against ground truth | 0.788 | 0.888 |
-| Fabricated services | 45 | 6 |
-| New tokens (mean) | 35,442 | 18,022 |
-| Turns (mean) | 16.5 | 8.7 |
+| | baseline | with fleetlens | change |
+|---|---|---|---|
+| F1 against ground truth | 0.788 | 0.888 | +13% |
+| New tokens (mean) | 35,442 | 18,022 | -49% |
+| Turns (mean) | 16.5 | 8.7 | -47% |
 
 Read one caveat with those numbers. The size of the benefit depended more on whether the
 agent discovered the tools at all than on the arm it was in: in the runs where it never
-called fleetlens, it scored like the baseline and produced every fabrication in its arm.
-That split was not randomised, because the agent chose when to go looking, so the gap
-between an adopting run and a non-adopting one is an optimistic figure rather than a
-measured effect.
+called fleetlens, it scored like the baseline. That split was not randomised, because the
+agent chose when to go looking, so the gap between an adopting run and a non-adopting one is
+an optimistic figure rather than a measured effect.
 
 One corpus, one framework family, one agent. Treat the numbers as indicative rather than
 general. The questions, the ground truth, the harness, the scoring and the questions where
@@ -474,34 +521,6 @@ numbers predate the current thread pool: the run was made when every tool was li
 two at a time, a limit that now applies only to the one tool that builds its response in
 Python rather than waiting on a socket. Concurrent figures today are better than the table
 shows.
-
-## Pinning an index for a repeatable evaluation
-
-The index is rebuilt on a schedule, which is wrong when you are measuring something: if it
-changes between two runs, a difference in the result cannot be attributed to the change you
-made. Pinning freezes a copy and serves it at its own URL.
-
-```bash
-export FLEETLENS_URL=http://fleetlens.internal:8081
-export FLEETLENS_TOKEN=...                       # the team's shared token
-
-fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
-# pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
-```
-
-Point a client at the pin instead of the live server and nothing else changes:
-
-```
-http://fleetlens.internal:8081/mcp               # always the newest index
-http://fleetlens.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
-```
-
-`fl pin list`, `fl pin extend` and `fl unpin` manage them. The commands are a convenience
-over plain HTTP on the same port and token, so curl works just as well and installing the
-CLI is optional.
-
-Full guide, including what to record so a result stays attributable and what an operator
-needs to configure: [docs/pinning.md](https://github.com/tata1mg/fleetlens/blob/main/docs/pinning.md).
 
 ## Roadmap
 
