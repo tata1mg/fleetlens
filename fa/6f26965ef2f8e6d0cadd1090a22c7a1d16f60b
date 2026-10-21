@@ -1,0 +1,23 @@
+README.md
+  s_d5ea2fae8a9c21::t_d7bdd42d059be3 402-404,408,414,417-418,421-423,425-426
+docs/pinning.md
+  s_d5ea2fae8a9c21::t_edd77c041d384a 143-154
+  s_d5ea2fae8a9c21::t_5d762f445017f3 1-62,66-142,155-187
+  s_d5ea2fae8a9c21::t_87369dceb3de9a 63-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa6f26965ef2f8e6d0cadd1090a22c7a1d16f60b",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
