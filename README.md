@@ -223,53 +223,24 @@ Routes are usually split across files that `config/routes.rb` pulls in with `ext
 trace into code through `get_endpoint_call_graph` even without a call graph.
 </details>
 
-### Service addresses from config, and pluggable host resolution
+### Service addresses from config
 
 Most fleets keep the address of every service they call in config: `ORDERS_HOST`,
-`PAYMENTS_BASE_URL`, `AUTH_SERVICE_ENDPOINT`. That is a twelve-factor convention, not one
-team's habit, so extracting those bindings is generic. It is the same mechanism the messaging
-adapter already uses for queue names.
+`PAYMENTS_BASE_URL`, `AUTH_SERVICE_ENDPOINT`. That is a twelve-factor convention rather than
+one team's habit, so reading those bindings is generic. It is the same mechanism the
+messaging adapter uses for queue names.
 
-Deciding *which* service a host denotes is **not** generic, so it is pluggable. Resolvers are
-tried in order, first hit wins:
+Deciding *which* service a given host denotes is not generic, so it is a plugin point. The
+resolvers that ship cover Kubernetes DNS, slug matching against the names of services already
+in the fleet, and the loopback case, where a dev or docker-compose config says
+`localhost:9402` and the only signal is the port or the config key. They see the whole
+binding rather than a hostname, and they are deliberately conservative: matching is on whole
+tokens, so `orders` never matches `reorders-legacy`, and a resolver returns nothing rather
+than guess, because a wrong answer invents a dependency that never existed.
 
-| Resolver | Handles |
-|---|---|
-| `ManifestResolver` | explicit `hosts:` mappings in `fleetlens.yaml`, no code needed |
-| `KubernetesDNSResolver` | `orders.default.svc.cluster.local` |
-| `SlugMatchResolver` | `orders-svc`, `orders_service:8080`, the common default |
-| `PortResolver` | `localhost:9402` where another service declares `PORT: 9402` |
-| `KeyNameResolver` | `ORDERS_SERVICE.HOST = localhost:...`, where the key names the target |
-
-The last two matter more than they look: development and docker-compose configs address peers
-on loopback, so the hostname carries nothing and the **port** or the **key** is the only
-signal. A resolver sees the whole binding (key, value, host, port), not just a hostname.
-
-`SlugMatchResolver` is deliberately conservative: it matches whole tokens, so `orders` never
-matches `reorders-legacy`, and it refuses known third-party domains outright.
-
-When your addresses follow no pattern a heuristic could infer, declare them. No fork or patch
-is needed:
-
-```yaml
-# fleetlens.yaml
-hosts:
-  internal-lb-7.example.com: orders
-  "*.payments.internal": payments
-```
-
-Or register your own resolver and keep everything else:
-
-```python
-from fleetlens.adapters import hosts
-
-class LegacyPrefix:
-    name = "legacy"
-    def resolve(self, binding, ctx):
-        return "orders" if binding.host.startswith("legacy-") else None
-
-hosts.HOST_RESOLVERS.insert(0, LegacyPrefix())
-```
+Two escape hatches for the addresses they decline. Declare the mapping in `fleetlens.yaml`
+under `hosts:`, which needs no code, or register your own resolver, which is a class with one
+method and no fork: [writing a host resolver](https://github.com/tata1mg/fleetlens/blob/main/CONTRIBUTING.md#writing-a-host-resolver).
 
 An address declared in config is evidence of intent to call, not proof of a call, since a
 config may list a host nobody uses. These edges carry `confidence: config`, and are upgraded to
@@ -311,9 +282,18 @@ exits with an error if either is missing. `fl enrich --pull` fetches whatever is
 To skip the summaries and index embeddings alone, pass `--kinds` without them.
 </details>
 
-### Repos ≠ services
+### fleetlens.yaml, for when the guess is wrong
 
-One repo is one service by default. When a repo ships several, declare them:
+Everything above is inferred, and the inference is that one repo is one service named after
+its directory. A `fleetlens.yaml` at a repo root overrides that. Four keys, each optional,
+and `fleetlens.yml` and `fleetlens.json` work the same:
+
+| Key | Declares | Without it |
+|---|---|---|
+| `services` | what this repo deploys, each with a `name`, a `path` and an optional `language` | the repo is one service, named after its directory |
+| `libraries` | paths that are code only and deploy nowhere | nothing is treated as library-only code |
+| `guidance` | paths holding your team's authored engineering rules | no authored rules |
+| `hosts` | hostnames mapped to service names, for addresses the resolvers decline | heuristics only |
 
 ```yaml
 # fleetlens.yaml
@@ -324,21 +304,19 @@ services:
     path: services/billing
 libraries:                  # code-only paths, never mesh services
   - path: packages/shared
+guidance:
+  - path: docs/standards
+hosts:
+  internal-lb-7.example.com: orders
+  "*.payments.internal": payments
 ```
 
-A utilities repo that is entirely a library declares only the `libraries` key:
-
-```yaml
-# fleetlens.yaml
-libraries:
-  - path: "."
-```
-
-Its code is indexed and `find_symbol` reaches it, but it contributes no service and no
-interfaces. That matters because a shared package is not something another service calls
-over the network: listing one as a service invents a node nobody deploys, hands it whatever
-routes its examples and its own health blueprint happen to declare, and makes "which
-services are unused" unreadable.
+A repo that is entirely a library declares only `libraries`, with `path: "."`. Its code is
+indexed and `find_symbol` reaches it, but it contributes no service and no interfaces. That
+distinction earns its place: a shared package is not something another service calls over the
+network, so listing one as a service invents a node nobody deploys, hands it whatever routes
+its examples and its own health blueprint happen to declare, and makes "which services are
+unused" unreadable.
 
 With the semantic tier, `fl enrich` summarises each library from its README and the code it
 exports, and `discover_libraries` finds it by what it provides ("retry with backoff"), so a
