@@ -1,0 +1,60 @@
+packages/fleetlens/fleetlens/server/admin.py
+  s_d5ea2fae8a9c21::t_f303a7cc546517 1-59,64-88
+  s_d5ea2fae8a9c21::t_9c281201b6c7a7 60-63
+packages/fleetlens/tests/test_pins.py
+  s_d5ea2fae8a9c21::t_42a4306ddf05ad 1-100,103-287
+  s_d5ea2fae8a9c21::t_d7bc4dc48e351e 101-102
+packages/fleetlens/fleetlens/pin_client.py
+  s_d5ea2fae8a9c21::t_0f64a9a2097f21 16
+  s_d5ea2fae8a9c21::t_b267612156f126 1-15,17-181
+ROADMAP.md
+  s_d5ea2fae8a9c21::t_9c281201b6c7a7 52-54
+packages/fleetlens/fleetlens/server/tools/service_graph.py
+  s_d5ea2fae8a9c21::t_7d1809970ef709 40-48
+packages/fleetlens/fleetlens/pins.py
+  s_d5ea2fae8a9c21::t_b712adbd102052 1-242,245-254
+  s_d5ea2fae8a9c21::t_f303a7cc546517 243-244
+.github/workflows/ci.yml
+  s_d5ea2fae8a9c21::t_2991f6506fba54 49-73,131-140
+  s_d5ea2fae8a9c21::t_9bd65a1fd9f0e0 141
+packages/fleetlens/tests/test_pin_client.py
+  s_d5ea2fae8a9c21::t_fe46e6faab0f39 170-175
+  s_d5ea2fae8a9c21::t_d7bc4dc48e351e 1-169,176-209
+packages/fleetlens/fleetlens/server/http.py
+  s_d5ea2fae8a9c21::t_f303a7cc546517 14-16,23,121-149,166-171
+packages/fleetlens/fleetlens/indexing.py
+  s_d5ea2fae8a9c21::t_e15cbfae721de9 9,63-75,105-107,306,339,354-356
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_65144039b43e17 7-8,537,539-541,549-550,555-558,560-565,568-573,575-581,583-588,590-595,597-605,688-690,693-719
+  s_d5ea2fae8a9c21::t_c826ab3ab3bbba 548,551-554,559,566-567,574,582,589,596
+  s_d5ea2fae8a9c21::t_7f08f8148a17cf 720
+packages/fleetlens/fleetlens/store/sqlite.py
+  s_d5ea2fae8a9c21::t_e15cbfae721de9 83-90,93-96,238,244-250,258-312
+  s_d5ea2fae8a9c21::t_5daf24450d44ca 36,313
+  s_d5ea2fae8a9c21::t_2991f6506fba54 37
+  s_d5ea2fae8a9c21::t_dfdea50ffcc184 19-35,537-538,540,544-545,556-557,561-562,565-566
+packages/fleetlens/tests/test_meta.py
+  s_d5ea2fae8a9c21::t_42a4306ddf05ad 1-136
+docs/deployment.md
+  s_d5ea2fae8a9c21::t_9c281201b6c7a7 140-149
+README.md
+  s_d5ea2fae8a9c21::t_9c281201b6c7a7 400-441
+packages/fleetlens/tests/test_pin_admin.py
+  s_d5ea2fae8a9c21::t_d7bc4dc48e351e 1-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f1d6c2b33d859ea85ad60aff9853d4b0346166b",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
