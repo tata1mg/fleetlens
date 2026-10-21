@@ -99,12 +99,17 @@ class PinStore:
     sleeping.
     """
 
-    def __init__(self, policy: PinPolicy, clock=time.time, live_db=None):
+    def __init__(self, policy: PinPolicy, clock=time.time, live_db=None, in_use=None):
         self.policy = policy
         self._clock = clock
         # The collector must never touch the live index, so the store is told where it is
         # rather than trusting the caller to keep the two directories apart.
         self._live_db = Path(live_db).resolve() if live_db else None
+        # Aliases currently open for serving, if anything is serving. Deleting a snapshot
+        # out from under an open connection is survivable on POSIX, since reads continue
+        # against the open inode, but the next open fails and the failure surfaces to
+        # whoever was mid-experiment. Expiry waits for them to fall out of the cache.
+        self._in_use = in_use or (lambda: [])
 
     # --- paths ------------------------------------------------------------------
     def _db(self, alias: str) -> Path:
@@ -119,6 +124,22 @@ class PinStore:
             raise PinError(400, "alias must be 1 to 63 characters of lowercase letters, "
                                 "digits, '.', '_' or '-', starting with a letter or digit")
         return alias
+
+    def snapshot_path(self, alias):
+        """The snapshot file for `alias`, or None when there is no usable pin by that name.
+
+        Returns None rather than raising for an invalid alias too, because this answers a
+        routing question: anything that is not a pin that exists is a 404, and telling an
+        unauthenticated-looking caller which of the two it was is not worth the detail.
+        """
+        try:
+            alias = self._check_alias(alias)
+        except PinError:
+            return None
+        db, meta = self._db(alias), self._meta(alias)
+        # Both halves must be present. A snapshot with no record is an orphan the collector
+        # is about to remove, and a record with no snapshot has nothing to serve.
+        return db if db.is_file() and meta.is_file() else None
 
     def _read(self, alias: str) -> dict:
         try:
@@ -250,12 +271,17 @@ class PinStore:
         if not d.is_dir():
             return []
         now, removed = self._clock(), []
+        serving = set(self._in_use())
         for meta in sorted(d.glob("*.json")):
             try:
                 record = json.loads(meta.read_text())
                 expires = _parse(record["expires_at"])
             except (ValueError, KeyError, TypeError, OSError):
                 log.warning("pin record %s is unreadable; leaving it and its snapshot", meta)
+                continue
+            if meta.stem in serving:
+                log.info("pin %s has expired but is being served; it will go on a later "
+                         "sweep once nothing is using it", meta.stem)
                 continue
             if expires > now:
                 continue

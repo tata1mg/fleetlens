@@ -358,3 +358,44 @@ def test_create_works_when_the_path_has_uri_special_characters(tmp_path):
     live.close()
     pin = _store(tmp_path).create(str(db), "odd", "", "")
     assert pin["alias"] == "odd"
+
+
+# --- a pin that is being served ---------------------------------------------------
+
+
+def test_an_expired_pin_being_served_is_not_collected(tmp_path):
+    """Deleting a snapshot under an open connection is survivable on POSIX, since reads
+    continue against the open inode, but the next open fails and it fails on whoever is
+    mid-experiment. Expiry waits for the pin to fall out of the serving cache."""
+    src, _ = _live(tmp_path)
+    pins_dir = tmp_path / "pins"
+    clock = _Clock()
+    serving = ["held"]
+    store = PinStore(PinPolicy(pins_dir=pins_dir, retain_days=1), clock=clock,
+                     live_db=src, in_use=lambda: list(serving))
+    store.create(src, "held")
+    store.create(src, "loose")
+
+    clock.now += 2 * DAY
+    assert store.collect() == ["loose"], "only the pin nobody is serving goes"
+    assert (pins_dir / "held.db").exists()
+
+    serving.clear()
+    assert store.collect() == ["held"], "it goes on a later sweep once nothing holds it"
+
+
+def test_snapshot_path_answers_only_for_a_complete_pin(tmp_path):
+    src, _ = _live(tmp_path)
+    pins_dir = tmp_path / "pins"
+    store = PinStore(PinPolicy(pins_dir=pins_dir), live_db=src)
+    store.create(src, "good")
+
+    assert store.snapshot_path("good") == pins_dir / "good.db"
+    assert store.snapshot_path("missing") is None
+    # An alias that could never be a pin is a routing 404, not a crash.
+    for bad in ("../../etc/passwd", "a/b", "", "UPPER", "abc\n", None, 7):
+        assert store.snapshot_path(bad) is None, bad
+
+    # A record with no snapshot has nothing to serve.
+    (pins_dir / "good.db").unlink()
+    assert store.snapshot_path("good") is None

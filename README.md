@@ -440,8 +440,24 @@ The client reads the server address and token from `--url` and `--token`, then
 `~/.config/fleetlens/config.toml` (or under `$XDG_CONFIG_HOME`). It needs nothing beyond a
 base `pip install fleetlens`.
 
-Serving a pin at `/at/<alias>/mcp` is not available yet. To query a pin today, run
-`fl serve --db <pins-dir>/<alias>.db` on another port.
+A pin is served by the same server, at its own URL. Point a client there instead of at
+`/mcp` and nothing else changes: same tools, same token, same responses, answered from the
+snapshot:
+
+```
+http://<host>:8081/mcp                      # always the newest index
+http://<host>:8081/pins/harness-eval/mcp    # that snapshot, until it expires
+```
+
+`get_index_info` reports which index answered, as `serving`, alongside the build id. Record
+the two together and a result stays attributable after the index has moved on.
+
+How many pinned indexes stay open at once is capped by `FLEETLENS_MAX_OPEN_PINS` (default
+3). Each open pin holds its own vector block, roughly 92 MB for 15,000 enriched interfaces
+at 1536 dimensions, so the cap is a memory bound rather than a hint. The first semantic
+search against a freshly opened pin pays about 280 ms to build that block; the rest are
+sub-millisecond. A pin that is being served is skipped by the collector even once it has
+expired, and removed on a later sweep.
 
 ## Roadmap
 

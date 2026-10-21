@@ -143,10 +143,13 @@ def start_pin_collector(pins, stop: threading.Event,
     return thread
 
 
-def serve(mcp, host: str, port: int, token: str, store, db_path: str, pins) -> None:
+def serve(mcp, host: str, port: int, token: str, store, db_path: str, pins,
+          registry=None) -> None:
     """Run the FastMCP streamable-HTTP app under uvicorn.
 
-    `pins` is a pins.PinPolicy; `db_path` is the live index that pins are snapshots of."""
+    `pins` is a pins.PinPolicy; `db_path` is the live index that pins are snapshots of.
+    `registry`, when given, also serves each pin at /pins/<alias>/mcp off the same MCP
+    server; see server/routing.py for why one server rather than one per pin."""
     try:
         import uvicorn
     except ImportError:  # pragma: no cover
@@ -163,10 +166,23 @@ def serve(mcp, host: str, port: int, token: str, store, db_path: str, pins) -> N
         return JSONResponse({"status": "ok", **store.index_info()})
 
     app.router.routes.append(Route("/healthz", healthz, methods=["GET"]))
+
+    if registry is not None:
+        # The MCP endpoint FastMCP already built, mounted a second time under each pin.
+        # Starlette's {alias} never matches across a slash, so this cannot collide with the
+        # admin routes below, and an alias containing a slash cannot exist anyway.
+        from .routing import alias_scoped
+        mcp_endpoint = next(r for r in app.router.routes
+                            if getattr(r, "path", None) == mcp.settings.streamable_http_path)
+        app.router.routes.append(
+            Route("/pins/{alias}/mcp", endpoint=alias_scoped(mcp_endpoint.app, registry)))
     # Not added to PUBLIC_PATHS: the auth middleware below covers these like /mcp.
     from ..pins import PinStore
     from .admin import pin_routes
-    pin_store = PinStore(pins, live_db=db_path)
+    pin_store = PinStore(pins, live_db=db_path,
+                         # A pin being served must not vanish under an open connection, so
+                         # the collector skips whatever the registry currently holds open.
+                         in_use=(registry.open_aliases if registry is not None else None))
     app.router.routes.extend(pin_routes(db_path, pin_store))
     if not token:
         log.warning("pin management (/pins) is unauthenticated because --insecure is set")

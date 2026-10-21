@@ -503,7 +503,21 @@ def _cmd_serve(args) -> int:
         key = os.environ.get(args.api_key_env, "") if args.api_key_env else ""
         embedder = build_embeddings(args.embed_provider, args.embed_model, args.base_url, key)
 
-    ctx = build_context(args.db, embedder=embedder, read_only=args.http)
+    live = build_context(args.db, embedder=embedder, read_only=args.http)
+    registry = ctx = None
+    if args.http:
+        # Only the HTTP server can route by URL, so stdio keeps the plain context it has
+        # always had and pays none of the indirection.
+        from .pins import PinPolicy
+        from .server.routing import ContextRegistry, RoutingContext
+        _pins_dir = args.pins_dir or Path(str(Path(args.db).expanduser())).parent / "pins"
+        from .pins import PinStore
+        registry = ContextRegistry(
+            live, PinStore(PinPolicy.from_env(_pins_dir), live_db=str(Path(args.db))),
+            build=lambda path: build_context(path, embedder=embedder, read_only=True))
+        ctx = RoutingContext(registry)
+    else:
+        ctx = live
     # Server instructions are surfaced by clients even when individual tools are deferred
     # behind a tool-search step. Benchmarking showed the agent used fleetlens in only 9 of
     # 24 runs, and in every one of those 9 it had first searched for tools — so telling the
@@ -546,7 +560,11 @@ def _cmd_serve(args) -> int:
         db_path = str(Path(args.db).expanduser())
         policy = PinPolicy.from_env(args.pins_dir or Path(db_path).parent / "pins")
         check_pins_dir(db_path, policy.pins_dir)
-        serve(mcp, args.host, args.port, token, ctx.store, db_path, policy)
+        # Over HTTP a pin is also served, at /pins/<alias>/mcp, by the same MCP server. The
+        # registry owns the live context and a bounded cache of pinned ones; `ctx` is the
+        # proxy the tools were already registered against, so nothing about them changes.
+        serve(mcp, args.host, args.port, token, registry.live.store, db_path, policy,
+              registry=registry)
         return 0
 
     mcp.run()  # stdio

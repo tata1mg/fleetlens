@@ -5,6 +5,20 @@ from ...server.app import ServiceContext
 from ._offload import offloaded
 
 
+def _serving() -> dict:
+    """The pin this request is being answered from, or the live index.
+
+    Imported lazily and defensively: stdio has no routing at all, and a context built
+    before pins existed has no registry.
+    """
+    try:
+        from ..routing import current_alias
+    except ImportError:  # pragma: no cover - server extra not installed
+        return {"pin": None, "live": True}
+    alias = current_alias.get()
+    return {"pin": alias, "live": alias is None}
+
+
 def register(mcp, ctx: ServiceContext) -> None:
     @mcp.tool()
     # The one tool measured to get slower with more threads: it returns the whole graph, and
@@ -46,8 +60,12 @@ def register(mcp, ctx: ServiceContext) -> None:
         produced it. `repositories` maps each indexed repository to the git commit it was
         built from; it is here and not on /healthz because it can run to hundreds of
         entries."""
-        return {"status": "ok", **ctx.store.index_info(),
-                "repositories": ctx.store.repo_shas()}
+        out = {"status": "ok", **ctx.store.index_info(),
+               "repositories": ctx.store.repo_shas()}
+        # Which index answered. Without this a result recorded against "the server" cannot
+        # be attributed to anything, which is the whole reason pinning exists.
+        out["serving"] = _serving()
+        return out
 
     @mcp.tool()
     @offloaded
