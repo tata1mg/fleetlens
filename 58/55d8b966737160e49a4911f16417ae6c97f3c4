@@ -1,0 +1,23 @@
+packages/fleetlens/pyproject.toml
+  s_d5ea2fae8a9c21::t_3d4ec91eb8f472 7,13
+CHANGELOG.md
+  s_d5ea2fae8a9c21::t_50d6f081654e73 1-81
+packages/fleetlens/fleetlens/__init__.py
+  s_d5ea2fae8a9c21::t_3d4ec91eb8f472 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5855d8b966737160e49a4911f16417ae6c97f3c4",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
