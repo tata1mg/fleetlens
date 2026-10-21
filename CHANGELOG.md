@@ -100,7 +100,7 @@ things an integrator can see.
 deployment. Python, TypeScript, JavaScript and Ruby.
 
 - **Interfaces**: HTTP routes and message queue publishers and consumers, read from source
-  rather than from a hand-written catalog. Flask, FastAPI, Sanic, Django, Express and Rails
+  rather than from a hand-written catalog. Flask, FastAPI, Sanic, Express and Rails
   routing, including mounted and nested routers.
 - **Call graph**: symbols and calls through SCIP, with each endpoint linked to the handler
   that serves it.

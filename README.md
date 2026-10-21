@@ -2,9 +2,9 @@
 
 > **The cross-repo context your coding agent can't grep for.**
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/tata1mg/fleetlens/blob/main/LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/status-early-orange.svg)](ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-early-orange.svg)](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md)
 [![MCP](https://img.shields.io/badge/MCP-native-5A4FCF.svg)](https://modelcontextprotocol.io)
 
 Your coding agent can read one repository. Your system is forty of them.
@@ -38,15 +38,22 @@ already flagged, it cannot overrule anything they worked out, and whatever it su
 match a literal string that really exists in the repository. Switch it off and you still have
 the graph.
 
-None of this leaves your network. There is no API key, no hosted service, nothing to run in
-production, and no telemetry. The parsers run on your machine because that is the only place
-they can run. The optional layers talk to [Ollama](https://ollama.com) on your own hardware,
-so even those stay inside the building. On a private codebase that is often the difference
-between being able to use something and not.
+The deterministic core needs no API key, no hosted service, nothing running in production and
+no network. It emits no telemetry. The parsers run on your machine because that is the only
+place they can run, and switching the optional layers off costs you nothing but the summaries.
+
+The optional layers do call a model, and where that model runs is your choice.
+[Ollama](https://ollama.com) on your own hardware keeps everything on the machine, which is
+the default. Pointing them at a hosted provider with `--provider openai` sends endpoint
+paths, handler names and docstrings to that provider. On a private codebase that distinction
+usually decides which of the two you pick.
 
 ---
 
 ## Quickstart
+
+You need Python 3.10 or newer, Node and npm for the indexers below, and git, which
+fleetlens runs at index time to record the commit each repository was at.
 
 fleetlens is not on PyPI yet, so install from source:
 
@@ -63,9 +70,18 @@ call graph. Install the ones you need:
 npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
 ```
 
+Two things about the repositories you are about to index. They must be **writable**,
+because indexing writes a `.context/` directory into each one. And a Python repository
+needs its **virtualenv present**, because `scip-python` resolves imports through the
+installed packages and without them the call graph for that repository comes back empty.
+
+`fl doctor` checks the toolchain, and `fl doctor /path/to/repo` checks one repository
+against it. Run it before the first index: it catches most of the above.
+
 Index a folder of service repos into one shared SQLite file, then serve it:
 
 ```bash
+fl doctor
 fl index-all /path/to/your/services --db fleet.db
 fl serve --db fleet.db
 ```
@@ -81,7 +97,7 @@ Now ask your agent what the orders service exposes, or what breaks if you change
 
 To share one index with a team, `fl serve --http` serves the same tools over
 streamable-HTTP behind a shared bearer token, with the index opened read-only. See
-[docs/deployment.md](docs/deployment.md).
+[docs/deployment.md](https://github.com/tata1mg/fleetlens/blob/main/docs/deployment.md).
 
 <details>
 <summary>Other commands</summary>
@@ -105,6 +121,9 @@ fl export-graph --db fleet.db -o mesh.html   # self-contained HTML render, no se
 | `get_endpoint_call_graph` | Trace an endpoint into the code it actually runs |
 | `find_symbol` / `get_symbol` | Locate a function across the fleet |
 | `get_callers` / `get_callees` | Blast radius of a change, transitively |
+| `get_service_graph` | Every service and every dependency edge, in one call |
+| `get_engineering_guidance` | The team's own written standards for writing code here |
+| `get_index_info` | Which build answered this, and what commit each repo was at |
 | `discover_services` / `discover_interfaces` / `discover_libraries` | Natural-language search *(opt-in, needs embeddings)* |
 
 ---
@@ -232,10 +251,15 @@ work too (`--provider openai`), and those do send code to an API, which is why t
 <summary>Semantic search (separate opt-in tier)</summary>
 
 ```bash
-ollama pull bge-m3
+ollama pull bge-m3            # embeddings
+ollama pull qwen2.5-coder:7b  # summaries
 fl enrich --db fleet.db                       # summaries + embeddings, only what changed
 fl serve  --db fleet.db --embed-model bge-m3  # enables discover_* tools
 ```
+
+`fl enrich` writes both summaries and embeddings by default, so it needs both models and
+exits with an error if either is missing. `fl enrich --pull` fetches whatever is absent.
+To skip the summaries and index embeddings alone, pass `--kinds` without them.
 </details>
 
 ### Repos ≠ services
@@ -309,9 +333,29 @@ chatbot. It is the derived graph that sits underneath those.
 Completeness is not claimed. Gaps are reported instead: `fl index` prints an unresolved-site
 count on every run, and `.context/skipped.json` lists each one.
 
-- **Languages:** Python and TypeScript. No Go, Java, or Ruby yet.
-- **Frameworks:** FastAPI, Flask, Sanic, Starlette, Express. No NestJS decorators, Django,
-  gRPC, or GraphQL.
+What a language supports differs by capability, so the matrix below is split by capability
+rather than reduced to a yes or no.
+
+| | Routes | Outbound HTTP | Queues | Call graph |
+|---|---|---|---|---|
+| **Python** | yes | yes | yes | `scip-python`, required |
+| **TypeScript** | Express only | yes | yes | `scip-typescript`, required |
+| **JavaScript** | Express only | **no** | **no** | none |
+| **Ruby** | Rails routing DSL | yes | config keys only | `scip-ruby`, optional |
+
+Nothing else is supported. Go, Java, Kotlin, Scala, Rust, PHP and C# files are counted so
+that engineering-guidance rules can be scoped by language, but there is no adapter for any
+of them and a repository in one of those languages is not discovered by a fleet sweep.
+
+- **Frameworks:** FastAPI, Flask, Sanic, Starlette and a generic fallback for unrecognised
+  Python route decorators; Express; the Rails routing DSL. No Django, no NestJS decorators,
+  no gRPC, no GraphQL.
+- **JavaScript is asymmetric.** Routes are extracted from `.js` files, outbound calls and
+  queue sites are not, so a JavaScript service can appear as a leaf in the graph when it is
+  not one.
+- **Express router prefixes** from `app.use('/prefix', router)` are not composed, so a
+  TypeScript or JavaScript path can be missing its prefix. Python mount prefixes are resolved.
+- **Rails engines** mounted with `mount` are recorded as skipped rather than followed.
 - **Config-derived hosts:** an outbound call assembled as `urljoin(config_host, endpoint)` is
   recorded as unresolved rather than joined.
 - **Dynamically registered consumers** have no handler anchor, so a queue consumer's callback
@@ -329,17 +373,22 @@ count on every run, and `.context/skipped.json` lists each one.
 
 ## Security
 
-The default path is local-only: the deterministic core runs entirely on your machine, so
-nothing can exfiltrate because nothing leaves. Config is read for structure, never for secret
-values, and `.fleetlensignore` is fail-closed. LLM tiers are the only path that can send code
-anywhere, they are off by default, and local Ollama keeps even those on-machine. More in
-[SECURITY.md](SECURITY.md).
+The deterministic core runs entirely on your machine and contacts nothing. Config is read for
+structure, never for secret values, and `.fleetlensignore` is fail-closed.
+
+The LLM tiers are the only path that can send anything anywhere. They are off by default, and
+with Ollama they stay on your hardware. With `--provider openai` they do not: prompts carry
+endpoint paths, handler names and docstrings.
+
+`fl serve --http` is protected by one shared bearer token and offers no TLS, no per-user
+identity and no rotation without a restart. Run it on a private network. More in
+[SECURITY.md](https://github.com/tata1mg/fleetlens/blob/main/SECURITY.md).
 
 ## Contributing
 
 Adding a framework adapter is the highest-leverage contribution and does not touch the core.
-See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports that include the repo shape that confused
-a parser are especially welcome.
+See [CONTRIBUTING.md](https://github.com/tata1mg/fleetlens/blob/main/CONTRIBUTING.md). Bug reports that include the repo shape
+that confused a parser are especially welcome.
 
 ## Benchmark
 
@@ -349,7 +398,29 @@ agents are using it at once.
 
 ### Does it help an agent?
 
-Placeholder, filled in when the current run finishes.
+A controlled study on one private 16 service corpus. One coding agent, 12 questions
+spanning several repositories, run with and without the fleetlens MCP server available and
+everything else held constant: 24 runs per arm, 2 repetitions per question per arm.
+
+| | baseline | with fleetlens |
+|---|---|---|
+| F1 against ground truth | 0.788 | 0.888 |
+| Fabricated services | 45 | 6 |
+| New tokens (mean) | 35,442 | 18,022 |
+| Turns (mean) | 16.5 | 8.7 |
+
+Read one caveat with those numbers. The size of the benefit depended more on whether the
+agent discovered the tools at all than on the arm it was in: in the runs where it never
+called fleetlens, it scored like the baseline and produced every fabrication in its arm.
+That split was not randomised, because the agent chose when to go looking, so the gap
+between an adopting run and a non-adopting one is an optimistic figure rather than a
+measured effect.
+
+One corpus, one framework family, one agent. Treat the numbers as indicative rather than
+general. The questions, the ground truth, the harness, the scoring and the questions where
+fleetlens did not help are all in
+[BENCHMARK.md](https://github.com/tata1mg/fleetlens/blob/main/BENCHMARK.md) and
+[`bench/`](https://github.com/tata1mg/fleetlens/tree/main/bench).
 
 ### Server performance
 
@@ -383,10 +454,11 @@ entire dependency graph in one response, so it is slow because the answer is lar
 because asking the same question the other way round took between 18 and 26 separate calls.
 And `find_symbol` has to read every symbol when the search term matches nothing, because a
 substring search cannot use a database index. A term that does match comes back in about six
-milliseconds. Fixing that is the next thing on [ROADMAP.md](ROADMAP.md).
+milliseconds. Fixing that is the next thing on
+[ROADMAP.md](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md).
 
-Reproduce with [`bench/mcp_perf.py`](bench/mcp_perf.py), which samples its arguments from
-whatever index it is pointed at:
+Reproduce with [`bench/mcp_perf.py`](https://github.com/tata1mg/fleetlens/blob/main/bench/mcp_perf.py), which samples its
+arguments from whatever index it is pointed at:
 
 ```bash
 python bench/mcp_perf.py --url http://host:8081/mcp --token "$FLEETLENS_TOKEN" \
@@ -396,10 +468,11 @@ python bench/mcp_perf.py --url http://host:8081/mcp --token "$FLEETLENS_TOKEN" \
 Three things to know about these numbers. The measuring script ran on the same four-CPU
 machine as the server, so it was competing for the same processors, which makes the results
 slightly worse than the server alone would manage. This deployment serves the parsed index
-only, with no embedding model loaded, so the two search tools are not covered. And fleetlens
-runs at most two tool calls at a time by default, because most of the work is building the
-response in Python rather than waiting on the disk, and allowing more turned out to be
-slower rather than faster.
+only, with no embedding model loaded, so the two search tools are not covered. And these
+numbers predate the current thread pool: the run was made when every tool was limited to
+two at a time, a limit that now applies only to the one tool that builds its response in
+Python rather than waiting on a socket. Concurrent figures today are better than the table
+shows.
 
 ## Pinning an index for a repeatable evaluation
 
@@ -427,11 +500,11 @@ over plain HTTP on the same port and token, so curl works just as well and insta
 CLI is optional.
 
 Full guide, including what to record so a result stays attributable and what an operator
-needs to configure: [docs/pinning.md](docs/pinning.md).
+needs to configure: [docs/pinning.md](https://github.com/tata1mg/fleetlens/blob/main/docs/pinning.md).
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md).
+See [ROADMAP.md](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md).
 
 ## License
 

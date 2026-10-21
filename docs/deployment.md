@@ -49,7 +49,7 @@ curl -s localhost:8081/healthz
 ```
 
 That is the whole deployment. `docker-compose.yml` is in the repository root and is about
-thirty lines; read it rather than treating it as magic.
+fifty lines; read it rather than treating it as magic.
 
 ## Serve a team without Docker
 
@@ -69,8 +69,12 @@ non-obvious permission in this setup.
 Install:
 
 ```bash
-python3 -m venv "$FLEETLENS_HOME/venv" && "$FLEETLENS_HOME/venv/bin/pip" install "fleetlens[all]"
+python3 -m venv "$FLEETLENS_HOME/venv" && "$FLEETLENS_HOME/venv/bin/pip" install \
+  "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
 ```
+
+fleetlens is not on PyPI, so the install is from git. Pin the tag rather than tracking
+`main`: an index built by one version is not guaranteed to be readable by another.
 
 ```bash
 sudo npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
@@ -106,9 +110,10 @@ EnvironmentFile=/etc/fleetlens/env
 ExecStart=/opt/fleetlens/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
 Restart=always
 
-# The server only reads the index and never touches the repositories.
+# The server never touches the repositories. It reads the index and, when someone pins a
+# build, writes a snapshot of it next to the index, so its own directory must stay writable.
 ProtectSystem=strict
-ReadOnlyPaths=/opt/fleetlens
+ReadWritePaths=/opt/fleetlens
 PrivateTmp=true
 NoNewPrivileges=true
 

@@ -5,13 +5,19 @@ descriptive rather than a schedule, and dates are deliberately absent.
 
 ## What works today
 
-**Languages.** Python, TypeScript and Ruby. Interfaces, queues and cross-repo edges are
-found for all three. The call graph additionally needs a SCIP indexer: `scip-python` and
+**Languages.** Python, TypeScript, JavaScript and Ruby, and what is found differs by
+language. Python is complete. TypeScript has routes, outbound calls and queues.
+JavaScript has routes only: outbound and queue detection read `.ts` and `.tsx` files, so a
+`.js` service appears in the graph but makes no outgoing edges. Ruby has routes and
+outbound calls. The call graph additionally needs a SCIP indexer: `scip-python` and
 `scip-typescript` install from npm, while Ruby needs a Sorbet setup, so Ruby routes and
-queues work out of the box but callers and callees do not.
+queues work out of the box but callers and callees do not. The README carries the full
+matrix.
 
-**Frameworks.** FastAPI and Flask, Express and NestJS, Rails. Message channels are found
-across the common brokers by reading publish and consume sites plus configuration.
+**Frameworks.** FastAPI, Flask, Sanic and Starlette; Express; Rails. Routes are read from
+what a module does rather than from what it imports, so a framework not on that list, an
+in-house one included, is still read. Message channels are found across the common brokers
+by reading publish and consume sites plus configuration.
 
 **The cross-repo resolver.** Outbound calls and config-declared hosts are joined against
 the fleet's interface inventory to produce `calls`, `publishes_to` and `shares_channel`
@@ -19,7 +25,10 @@ edges. Host resolution is pluggable, so a fleet with its own naming convention c
 fleetlens that convention without a fork.
 
 **Serving.** An MCP server over stdio for one engineer, or over HTTP behind a shared token
-for a team. `export-graph` renders the same graph as a standalone HTML file with no server.
+for a team. A served index carries a build id, a schema version and the commit each
+repository was at, and any build can be pinned and served at its own URL so an evaluation
+can be repeated against the same context. `export-graph` renders the same graph as a
+standalone HTML file with no server.
 
 **Optional LLM tier.** The parsers record the sites they could not resolve, and the tier
 resolves exactly those. An answer is accepted only when the path or channel it proposes
@@ -38,8 +47,9 @@ These are the honest gaps, not a to-do list with owners.
 - **gRPC and GraphQL** are not extracted as interfaces.
 - **Incremental enrichment is coarse.** Content hashing gates re-work, but orphaned
   objects from a removed service are not pruned.
-- **One index per server.** No multi-tenancy, and the shared HTTP server has a single
-  team-wide token rather than per-user identity.
+- **One live index per server.** A server serves one live index, plus a few pinned
+  snapshots of it. No multi-tenancy, and the shared HTTP server has a single team-wide
+  token rather than per-user identity.
 
 ## Likely next
 

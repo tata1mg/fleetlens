@@ -45,8 +45,9 @@ operator has configured globally, which invalidates the comparison.
 The baseline keeps read only `Bash` as well as `Grep`. A weak baseline is the first thing a
 reader will question, so the baseline is as capable as we could reasonably make it.
 
-48 runs total: 12 questions, 2 arms, 2 repetitions. Every run is a fresh session with no
-memory of the others. Four runs execute concurrently.
+48 runs per configuration: 12 questions, 2 arms, 2 repetitions. Two configurations were
+run, so 96 in all, and the headline numbers come from configuration 2. Every run is a
+fresh session with no memory of the others. Four runs execute concurrently.
 
 ### Corpora
 
@@ -274,8 +275,10 @@ context or defer them behind a search step. On a client that loads them eagerly,
 * Wall clock is contended, because four runs execute concurrently. Turns and tokens are not
   affected.
 * One corpus, one organisation, one framework family (Sanic and torpedo), one model, one day.
-* The corpus is Python dominant. One service is written in Ruby and is invisible to fleetlens's
-  parsers, despite having the second highest fan-in in the fleet.
+* The corpus is Python dominant. One service is written in Ruby and was invisible to
+  fleetlens's parsers on the day of the study, despite having the second highest fan-in in
+  the fleet. Ruby support landed immediately afterwards and the study has not been re-run,
+  so that service is missing from these numbers but would not be missing today.
 * The questions were written with knowledge of what fleetlens does. They target cross repository
   reasoning because that is the claim under test, but that is not a neutral selection.
 

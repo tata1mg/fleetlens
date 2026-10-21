@@ -8,6 +8,14 @@ runs of an agent or a harness, a difference in the result cannot be attributed t
 change you made. Pinning freezes a copy of the index and serves it at its own URL, so you
 can come back to the same context tomorrow and get the same answers.
 
+## Before you start
+
+Two things have to be true of the server, not of your machine:
+
+- **SQLite 3.27 or newer**, because the snapshot is taken with `VACUUM INTO`.
+- **An index built by 0.2.0 or later.** Earlier indexes carry no build id, and there is
+  nothing to name a pin after, so `fl pin create` returns 409. Re-index to fix it.
+
 ## The short version
 
 ```bash
@@ -108,7 +116,7 @@ If you do install the CLI, the base install is enough. The pin commands need non
 indexing toolchain, so no extras:
 
 ```bash
-pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git#subdirectory=packages/fleetlens"
+pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
 ```
 
 ## Recording what you measured against

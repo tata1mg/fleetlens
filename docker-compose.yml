@@ -32,12 +32,16 @@ services:
       - "${FLEETLENS_PORT:-8081}:8081"
     volumes:
       - fleetlens-data:/data:ro
+      # The index stays read-only so the server cannot corrupt it. Pin snapshots are the
+      # one thing the server does write, so they get a volume of their own.
+      - fleetlens-pins:/pins
     environment:
       FLEETLENS_TOKEN: ${FLEETLENS_TOKEN:?set FLEETLENS_TOKEN, e.g. export FLEETLENS_TOKEN=$(openssl rand -hex 32)}
-    command: ["serve", "--http", "--host", "0.0.0.0", "--db", "/data/fleetlens.db"]
+    command: ["serve", "--http", "--host", "0.0.0.0", "--db", "/data/fleetlens.db", "--pins-dir", "/pins"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8081/healthz')"]
       interval: 30s
 
 volumes:
   fleetlens-data:
+  fleetlens-pins:
