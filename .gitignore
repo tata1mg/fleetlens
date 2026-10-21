@@ -23,5 +23,6 @@ build/
 # benchmark artifacts (raw runs are large and machine-specific)
 bench/results/
 
-# eng-team workflow scratch output
+# eng-team workflow scratch output, and the agent definitions that drive it
 .eng_team/
+.claude/
