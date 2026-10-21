@@ -4,6 +4,8 @@
     fl index      <repo>  [--db DB] [--slug NAME] [-l LANG]   # one repo
     fl index-all  <dir>   [--db DB] [-l LANG]                 # a folder of service repos
     fl serve              [--db DB] [--http]                  # run the MCP server (stdio, or HTTP for a team)
+    fl pin create --as ALIAS [--reason R]                     # freeze the served index as a named snapshot
+    fl pin list | extend ALIAS --days N | delete ALIAS        # manage snapshots (also: fl unpin ALIAS)
 
 Deterministic core: no LLM, no API key. The DB is a single SQLite file (default
 ./fleetlens.db) shared across all indexed repos. That shared DB is what makes the graph
@@ -539,12 +541,73 @@ def _cmd_serve(args) -> int:
 
         from .server.http import resolve_token, serve
         logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+        from .pins import PinPolicy
         token = resolve_token(args.token_env, args.insecure)
-        serve(mcp, args.host, args.port, token, ctx.store)
+        db_path = str(Path(args.db).expanduser())
+        policy = PinPolicy.from_env(args.pins_dir or Path(db_path).parent / "pins")
+        serve(mcp, args.host, args.port, token, ctx.store, db_path, policy)
         return 0
 
     mcp.run()  # stdio
     return 0
+
+
+def _pin_run(args, fn) -> int:
+    """Run one pin request and turn the outcome into an exit code.
+
+    `fn(pin_client, url, token)` returns (response, line to print). 0 on success, 1 when
+    the server refused (its message is printed), 2 when there was no server to ask. The pin
+    client is imported here, not at the top, so every other command starts without it and
+    `fl pin` starts without the server stack.
+    """
+    from . import pin_client
+    try:
+        url, token = pin_client.resolve_connection(args.url, args.token)
+        out, line = fn(pin_client, url, token)
+    except pin_client.ClientError as exc:
+        print(f"fl pin: {exc.message}", file=sys.stderr)
+        return 1 if exc.status is not None else 2
+    note = pin_client.newer_server_note(out)
+    if note:
+        print(note, file=sys.stderr)
+    print(line)
+    return 0
+
+
+def _cmd_pin_create(args) -> int:
+    def run(pc, url, token):
+        out = pc.create(url, token, args.alias, args.reason, args.owner)
+        return out, pc.format_pinned(out)
+    return _pin_run(args, run)
+
+
+def _cmd_pin_list(args) -> int:
+    def run(pc, url, token):
+        out = pc.list_pins(url, token)
+        pins = out.get("pins") or []
+        return out, pc.format_table(pins) if pins else "no pins"
+    return _pin_run(args, run)
+
+
+def _cmd_pin_extend(args) -> int:
+    def run(pc, url, token):
+        out = pc.extend(url, token, args.alias, args.days)
+        return out, f'"{args.alias}" now expires {str(out.get("expires_at", ""))[:10]}'
+    return _pin_run(args, run)
+
+
+def _cmd_pin_delete(args) -> int:
+    def run(pc, url, token):
+        out = pc.delete(url, token, args.alias)
+        return out, f'unpinned "{args.alias}"'
+    return _pin_run(args, run)
+
+
+def _pin_args(p) -> None:
+    p.add_argument("--url", default=None,
+                   help="server URL (else $FLEETLENS_URL, else ~/.config/fleetlens/config.toml)")
+    p.add_argument("--token", default=None,
+                   help="bearer token (else $FLEETLENS_TOKEN, else the config file)")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -630,7 +693,38 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--embed-provider", default="ollama", dest="embed_provider")
     p.add_argument("--base-url", default="", dest="base_url")
     p.add_argument("--api-key-env", default="OPENAI_API_KEY", dest="api_key_env")
+    p.add_argument("--pins-dir", default=None, dest="pins_dir",
+                   help="with --http: where pinned snapshots are kept (default: a pins/ "
+                        "directory next to --db, so the same volume holds both)")
     p.set_defaults(func=_cmd_serve)
+
+    # Shared by every pin command so --url/--token work after the subcommand, where people
+    # type them.
+    conn = argparse.ArgumentParser(add_help=False)
+    _pin_args(conn)
+
+    p = sub.add_parser("pin", help="freeze the served index as a named, expiring snapshot")
+    pin_sub = p.add_subparsers(dest="pin_cmd", required=True)
+    # Deliberately no duration option on create: the server decides how long a pin lives.
+    q = pin_sub.add_parser("create", parents=[conn], help="pin the index as it is now")
+    q.add_argument("--as", required=True, dest="alias", metavar="ALIAS")
+    q.add_argument("--reason", default="")
+    q.add_argument("--owner", default=None, help="a label only (default: your user name)")
+    q.set_defaults(func=_cmd_pin_create)
+    q = pin_sub.add_parser("list", parents=[conn], help="list pins")
+    q.set_defaults(func=_cmd_pin_list)
+    q = pin_sub.add_parser("extend", parents=[conn],
+                           help="add days to a pin (the server caps each extension)")
+    q.add_argument("alias")
+    q.add_argument("--days", type=int, required=True)
+    q.set_defaults(func=_cmd_pin_extend)
+    q = pin_sub.add_parser("delete", parents=[conn], help="remove a pin")
+    q.add_argument("alias")
+    q.set_defaults(func=_cmd_pin_delete)
+
+    p = sub.add_parser("unpin", parents=[conn], help="remove a pin (same as `pin delete`)")
+    p.add_argument("alias")
+    p.set_defaults(func=_cmd_pin_delete)
 
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
     return args.func(args)

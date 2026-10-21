@@ -137,6 +137,16 @@ fl index-all "$FLEETLENS_REPOS" --db "$FLEETLENS_HOME/data/fleetlens.db.new" && 
 Run it nightly after pulling the checkouts. Under Docker the same thing is
 `docker compose run --rm index`, which already does the build-and-rename.
 
+## Pinning an index
+
+`fl pin` freezes the served index as a named snapshot for a repeatable evaluation; see the
+package README for the commands. The server needs a writable directory for the snapshots,
+`pins/` next to the index by default or `--pins-dir`. The Docker Compose `serve` service
+mounts `/data` read-only, so give it a writable location for pins (a second volume and
+`--pins-dir`) before using it. Two environment variables set retention:
+`FLEETLENS_RETAIN_PINNED_DAYS` (default 30) and `FLEETLENS_PIN_EXTEND_MAX_DAYS` (default
+10, the most one extension may add). The pin routes use the same token as `/mcp`.
+
 ## Connecting clients
 
 Engineers need the URL and the token. For Claude Code:

@@ -46,6 +46,31 @@ jobs:
         working-directory: packages/fleetlens
         run: python -m pytest -q
 
+  # The pin client must work on `pip install fleetlens` with no extras, from a laptop that
+  # has no server stack. 3.10 alone is enough: it is the floor and has no tomllib.
+  client-base-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install with no extras
+        run: pip install packages/fleetlens pytest
+      - name: Commands start
+        run: fl --help > /dev/null && fl pin --help > /dev/null
+      - name: Importing the CLI does not load the server stack
+        run: |
+          python -c "
+          import sys
+          import fleetlens.cli
+          bad = [m for m in ('mcp', 'numpy', 'tree_sitter', 'starlette', 'uvicorn') if m in sys.modules]
+          assert not bad, f'cli import pulled in {bad}'
+          "
+      - name: Client tests
+        working-directory: packages/fleetlens
+        run: python -m pytest -q tests/test_pin_client.py
+
   build:
     runs-on: ubuntu-latest
     steps:
@@ -102,6 +127,17 @@ jobs:
           echo "unauthenticated request must be rejected"
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/mcp)
           test "$code" = "401" || { echo "expected 401, got $code"; docker logs fl-serve; exit 1; }
+
+          echo "pin admin routes: create, list, delete, and 401 without a token"
+          auth="Authorization: Bearer ci-token"
+          curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
+            -d '{"alias":"ci-pin","reason":"ci"}' http://localhost:8081/pins
+          listing=$(curl -sf -H "$auth" http://localhost:8081/pins)
+          echo "$listing"
+          echo "$listing" | python3 -c 'import json,sys; p=json.load(sys.stdin)["pins"]; assert [x["alias"] for x in p]==["ci-pin"] and p[0]["expires_at"]'
+          curl -sf -X DELETE -H "$auth" http://localhost:8081/pins/ci-pin
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/pins)
+          test "$code" = "401" || { echo "expected 401 on /pins, got $code"; docker logs fl-serve; exit 1; }
 
       - name: Server logs
         if: always()

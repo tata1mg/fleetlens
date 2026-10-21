@@ -39,8 +39,15 @@ def register(mcp, ctx: ServiceContext) -> None:
         Worth checking before you trust an answer on a shared server: the index is a
         snapshot of the repositories at the moment it was built, so anything merged since
         is invisible to every other tool here. Also tells you how many services are
-        covered, which is how you find out a repository was never indexed at all."""
-        return {"status": "ok", **ctx.store.index_info()}
+        covered, which is how you find out a repository was never indexed at all.
+
+        `build_id` identifies this exact build. A harness running an evaluation should
+        record it with each result, so the answer can be attributed to the index that
+        produced it. `repositories` maps each indexed repository to the git commit it was
+        built from; it is here and not on /healthz because it can run to hundreds of
+        entries."""
+        return {"status": "ok", **ctx.store.index_info(),
+                "repositories": ctx.store.repo_shas()}
 
     @mcp.tool()
     @offloaded

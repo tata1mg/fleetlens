@@ -13,13 +13,27 @@ import struct
 import threading
 from typing import Optional
 
-try:                                  # optional: only the semantic tier benefits
-    import numpy as _np
-except ImportError:                     # pragma: no cover - exercised by the fallback test
-    _np = None
-
 from .base import ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
 from .models import STUB_SOURCE, KnowledgeObject, Relationship, make_stub_object
+
+# numpy is optional and only the semantic tier benefits. It is resolved on first use, not at
+# import, because this module is imported by every `fl` command and numpy is slow to load;
+# `fl pin` in particular must work on an install that has none of the extras. None means
+# "known absent" and is also what the fallback test sets.
+_UNRESOLVED = object()
+_np = _UNRESOLVED
+
+
+def _numpy():
+    global _np
+    if _np is _UNRESOLVED:
+        try:
+            import numpy
+            _np = numpy
+        except ImportError:             # pragma: no cover - exercised by the fallback test
+            _np = None
+    return _np
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS knowledge_objects (
@@ -66,7 +80,19 @@ CREATE TABLE IF NOT EXISTS enrichments (
     PRIMARY KEY (object_id, model)
 );
 CREATE INDEX IF NOT EXISTS idx_enrich_type ON enrichments(object_type, model);
+
+-- Facts about the index as a whole: which build it is and what it was built from. A plain
+-- key/value table so a later release can add a fact without a schema change. IF NOT EXISTS
+-- means a writable open upgrades an index built before this table existed.
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
+
+#: Layout version of the tables above, recorded in meta so a future server can tell whether
+#: it understands a file it is handed. Bump it when a change would break an older reader.
+SCHEMA_VERSION = 1
 
 
 def _pack(vec: list[float]) -> bytes:
@@ -211,19 +237,82 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         built = self._conn.execute(
             "SELECT MAX(updated_at) FROM knowledge_objects").fetchone()[0]
         edges = self._conn.execute("SELECT COUNT(*) FROM relationships").fetchone()[0]
+        meta = self.meta()
         info = {"indexed_at": built, "services": counts.get("service", 0),
                 "libraries": counts.get("library", 0),
                 "interfaces": counts.get("interface", 0),
                 # "code_symbol", the name the call-graph loader writes. Looking up
                 # "symbol" quietly reported 0 on an index holding half a million of them,
                 # on the one tool whose job is telling you whether to trust the rest.
-                "symbols": counts.get("code_symbol", 0), "relationships": edges}
+                "symbols": counts.get("code_symbol", 0), "relationships": edges,
+                # None on an index built before the meta table, which a read-only server
+                # must still be able to open and describe.
+                "build_id": meta.get("build_id"), "built_at": meta.get("built_at"),
+                "schema_version": (int(meta["schema_version"])
+                                   if meta.get("schema_version", "").isdigit() else None),
+                "fleetlens_version": meta.get("fleetlens_version")}
         # Three full scans over half a million rows, for the tool clients are told to call
         # first to decide whether to trust the others. On a served index the answer cannot
         # change until the file is swapped, and `reload_if_changed` clears this when it is.
         if self.read_only:
             self._info = info
         return dict(info)
+
+    # --- build metadata ------------------------------------------------------
+    def get_meta(self, key: str) -> Optional[str]:
+        return self.meta().get(key)
+
+    def set_meta(self, key: str, value: str) -> None:
+        """Writable stores only. The caller commits, like every other write here."""
+        self._conn.execute(
+            "INSERT INTO meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+
+    def meta(self) -> dict:
+        """Every meta row. Empty when the table is missing: a read-only store may be opened
+        on an index built before meta existed, and that must degrade to "unknown build"
+        rather than an error."""
+        try:
+            return dict(self._conn.execute("SELECT key, value FROM meta").fetchall())
+        except sqlite3.OperationalError:
+            return {}
+
+    def repo_shas(self) -> dict:
+        """Repository directory name -> git commit the index was built from."""
+        try:
+            return json.loads(self.meta().get("repo_shas") or "{}")
+        except ValueError:
+            return {}
+
+    def stamp_build(self, repo_shas: dict) -> None:
+        """Record which build this index is and merge in the commits it was built from.
+
+        The id is second-granular, a deliberate step past the minute-level example in the
+        issue: two builds inside one minute (a scripted re-index, a test) must stay
+        distinguishable, or a pin could name the wrong one.
+
+        SHAs are merged into the stored map rather than replacing it, because `fl index
+        <one repo>` knows about one repository and must not erase the others. A repo that
+        now has no SHA (no longer a git checkout) loses its own entry, and only its own.
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        try:
+            from importlib.metadata import version
+            fl_version = version("fleetlens")
+        except Exception:  # noqa: BLE001 - running from a source tree without metadata
+            fl_version = "unknown"
+        shas = self.repo_shas()
+        for name, sha in repo_shas.items():
+            if sha:
+                shas[name] = sha
+            else:
+                shas.pop(name, None)
+        self.set_meta("build_id", now.strftime("%Y%m%dT%H%M%SZ"))
+        self.set_meta("built_at", now.isoformat(timespec="seconds"))
+        self.set_meta("schema_version", str(SCHEMA_VERSION))
+        self.set_meta("fleetlens_version", fl_version)
+        self.set_meta("repo_shas", json.dumps(shas, sort_keys=True))
 
     def commit(self) -> None:
         self._conn.commit()
@@ -466,14 +555,15 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
             "SELECT object_id, vector FROM enrichments WHERE object_type=? AND model=? "
             "ORDER BY object_id;", (object_type, model)).fetchall()
         ids = [r[0] for r in rows]
-        if _np is not None and rows:
+        np = _numpy()
+        if np is not None and rows:
             dim = len(rows[0][1]) // 4
-            mat = _np.frombuffer(b"".join(r[1] for r in rows),
+            mat = np.frombuffer(b"".join(r[1] for r in rows),
                                  dtype="<f4").reshape(len(rows), dim)
             # Unit rows, so a query only needs its own norm and the comparison is one
             # matrix-vector product.
-            norms = _np.linalg.norm(mat, axis=1, keepdims=True)
-            return (ids, mat / _np.where(norms == 0, 1.0, norms))
+            norms = np.linalg.norm(mat, axis=1, keepdims=True)
+            return (ids, mat / np.where(norms == 0, 1.0, norms))
         return (ids, [_unpack(r[1]) for r in rows])
 
     def search(self, vector, object_type, model, limit=5) -> list[tuple[str, float]]:
@@ -481,16 +571,17 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         if not ids:
             return []
         limit = max(1, min(int(limit), len(ids)))
-        if _np is None:
+        np = _numpy()
+        if np is None:
             scored = [(oid, _cosine(vector, v)) for oid, v in zip(ids, mat)]
             scored.sort(key=lambda t: (-t[1], t[0]))
             return scored[:limit]
-        q = _np.asarray(vector, dtype="<f4")
-        qn = float(_np.linalg.norm(q)) or 1.0
+        q = np.asarray(vector, dtype="<f4")
+        qn = float(np.linalg.norm(q)) or 1.0
         scores = (mat @ q) / qn
         # Only the top `limit` need ordering; partition avoids sorting the whole fleet.
-        top = _np.argpartition(-scores, limit - 1)[:limit]
-        top = top[_np.argsort(-scores[top], kind="stable")]
+        top = np.argpartition(-scores, limit - 1)[:limit]
+        top = top[np.argsort(-scores[top], kind="stable")]
         return [(ids[i], float(scores[i])) for i in top]
 
     def summary_of(self, object_id: str) -> Optional[str]:

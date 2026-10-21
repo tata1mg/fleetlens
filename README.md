@@ -401,6 +401,48 @@ runs at most two tool calls at a time by default, because most of the work is bu
 response in Python rather than waiting on the disk, and allowing more turned out to be
 slower rather than faster.
 
+## Pinning an index for a repeatable evaluation
+
+The live index is rebuilt on a schedule. To run an evaluation against data that holds
+still, pin the index: the server takes a consistent snapshot (SQLite `VACUUM INTO`, so it is
+safe while a build is running) and keeps it for a limited time.
+
+```bash
+export FLEETLENS_URL=http://fleetlens.internal:8081
+export FLEETLENS_TOKEN=...             # the same shared token the server uses
+
+fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+# pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
+fl pin list
+fl pin extend eval-q4 --days 5
+fl unpin eval-q4                       # same as: fl pin delete eval-q4
+```
+
+Record the `build_id` from `get_index_info` with each result so an answer can be traced to
+the index that produced it; `repositories` in the same response gives the git commit each
+repository was built from.
+
+The server decides how long a pin lives, so `create` takes no duration. Settings on the
+server:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `FLEETLENS_RETAIN_PINNED_DAYS` | 30 | Lifetime of a new pin |
+| `FLEETLENS_PIN_EXTEND_MAX_DAYS` | 10 | Most days one `extend` may add |
+
+Snapshots live in `--pins-dir` (default: a `pins/` directory next to `--db`), which must be
+writable by the server. Expired pins are removed at startup, hourly, and when pins are
+listed. The same operations are plain HTTP on the server's port, behind the same bearer
+token: `GET /pins`, `POST /pins`, `PATCH /pins/<alias>`, `DELETE /pins/<alias>`.
+
+The client reads the server address and token from `--url` and `--token`, then
+`FLEETLENS_URL` and `FLEETLENS_TOKEN`, then `url` and `token` in
+`~/.config/fleetlens/config.toml` (or under `$XDG_CONFIG_HOME`). It needs nothing beyond a
+base `pip install fleetlens`.
+
+Serving a pin at `/at/<alias>/mcp` is not available yet. To query a pin today, run
+`fl serve --db <pins-dir>/<alias>.db` on another port.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md).
