@@ -1,0 +1,26 @@
+packages/fleetlens/tests/test_pins.py
+  s_d5ea2fae8a9c21::t_ec80ed930e4f96 288-360
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_1210164457d5b5 537,541
+packages/fleetlens/fleetlens/pins.py
+  s_d5ea2fae8a9c21::t_605e191ddd6554 277-278
+  s_d5ea2fae8a9c21::t_1210164457d5b5 34-36,102,105-107,118,131-136,167-169,205-206,208-214,216,224-228,235-238,269-271,273-276,279,289-300
+packages/fleetlens/fleetlens/server/http.py
+  s_d5ea2fae8a9c21::t_1210164457d5b5 169,171-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4031e2d07e29cddfd7697cc38f0ff385de2da127",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
