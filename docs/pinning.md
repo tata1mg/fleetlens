@@ -104,8 +104,12 @@ curl -X PATCH  "$FLEETLENS_URL/pins/eval-q4" -H "Authorization: Bearer $FLEETLEN
 curl -X DELETE "$FLEETLENS_URL/pins/eval-q4" -H "Authorization: Bearer $FLEETLENS_TOKEN"
 ```
 
-If you do install the CLI, a plain `pip install fleetlens` is enough. The pin commands need
-none of the indexing toolchain.
+If you do install the CLI, the base install is enough. The pin commands need none of the
+indexing toolchain, so no extras:
+
+```bash
+pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git#subdirectory=packages/fleetlens"
+```
 
 ## Recording what you measured against
 
