@@ -163,6 +163,32 @@ def test_a_broken_dependency_is_not_reported_as_an_mcp_version_problem(capsys, m
     assert "mcp>=1.2.0,<2.0" not in err          # and does not blame mcp's version
 
 
+def test_serving_an_index_that_is_not_there_refuses_instead_of_creating_one(tmp_path, capsys):
+    """The failure that looked like an empty fleet.
+
+    Only `--http` opened the store read-only, so stdio took a `--db` that did not resolve
+    as an instruction to create one, ran the schema into it, and served every tool from an
+    empty index. An MCP client picks the working directory, so the relative path that was
+    right in a shell is routinely wrong there, and the result read as "fleetlens found
+    nothing in your fleet" rather than as a setup mistake.
+    """
+    import argparse
+
+    from fleetlens import cli
+
+    missing = tmp_path / "not-built-yet.db"
+    args = dict(db=str(missing), host="127.0.0.1", port=8081, embed_model="",
+                embed_provider="ollama", base_url="", api_key_env="", token_env="T",
+                insecure=True, pins_dir=None)
+
+    for transport in (False, True):                      # stdio, then --http
+        assert cli._cmd_serve(argparse.Namespace(http=transport, **args)) == 2
+        err = capsys.readouterr().err
+        assert str(missing) in err                       # says which path it looked at
+        assert "index-all" in err                        # and how to make one
+        assert not missing.exists(), "serve must never create the index"
+
+
 def test_only_the_token_gates_access_whatever_the_bind_address(monkeypatch):
     """Host and Origin are not checked. The SDK validates Host by default on a loopback
     bind, which protects a server with no authentication from a web page the user happens

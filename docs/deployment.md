@@ -16,11 +16,22 @@ engineer indexing the same repositories on their own machine.
 No deployment, no token, no container.
 
 ```bash
-fl index-all /path/to/your/repos
+fl index-all /path/to/your/repos --db "$PWD/fleetlens.db"
 ```
 
+Absolute paths in the client config, for both the executable and the index. The client
+starts `fl` in a working directory of its own and without your shell's `PATH`, so a
+relative `--db` points somewhere else and a bare `fl` may not be found at all.
+
 ```json
-{ "mcpServers": { "fleetlens": { "command": "fl", "args": ["serve", "--db", "fleetlens.db"] } } }
+{
+  "mcpServers": {
+    "fleetlens": {
+      "command": "/absolute/path/to/fl",
+      "args": ["serve", "--db", "/absolute/path/to/fleetlens.db"]
+    }
+  }
+}
 ```
 
 If that answers useful questions about your fleet, the rest of this page is worth doing.
@@ -49,11 +60,13 @@ curl -s localhost:8081/healthz
 ```
 
 That is the whole deployment. `docker-compose.yml` is in the repository root and is about
-thirty lines; read it rather than treating it as magic.
+fifty lines; read it rather than treating it as magic.
 
 ## Serve a team without Docker
 
-Same thing, managed by systemd. Substitute your own paths:
+Same thing, managed by systemd. Set these three once, in the shell you run the rest of this
+section in. Every command below, the unit files included, is written in terms of them, so
+changing a path here is the only edit you have to make:
 
 ```bash
 FLEETLENS_HOME=/opt/fleetlens          # the directory fleetlens owns; the index lives here
@@ -61,59 +74,91 @@ FLEETLENS_REPOS=/srv/repos             # your checkouts; can be anywhere
 FLEETLENS_USER=fleetlens               # the account that runs it
 ```
 
-`$FLEETLENS_HOME` is fleetlens's own directory and the index is the only thing it keeps
-there. The repositories are separate and must be **writable** by `$FLEETLENS_USER`,
-because indexing writes a `.context/` directory into each one. That is the only
-non-obvious permission in this setup.
+`$FLEETLENS_HOME` is fleetlens's own directory. The index lives there, and so do pin
+snapshots, so it has to be writable by the account that serves. The repositories are
+separate and must **also** be writable by `$FLEETLENS_USER`, because indexing writes a
+`.context/` directory into each one. Those two are the only non-obvious permissions here.
 
-Install:
+Create the account and the directories first. The unit below runs as `$FLEETLENS_USER`, so
+anything it writes has to belong to that account:
 
 ```bash
-python3 -m venv "$FLEETLENS_HOME/venv" && "$FLEETLENS_HOME/venv/bin/pip" install "fleetlens[all]"
+sudo useradd --system --home-dir "$FLEETLENS_HOME" --shell /usr/sbin/nologin "$FLEETLENS_USER" || true
+sudo mkdir -p "$FLEETLENS_HOME"
+sudo chown -R "$FLEETLENS_USER:$FLEETLENS_USER" "$FLEETLENS_HOME" "$FLEETLENS_REPOS"
 ```
+
+Install **as that account**. The directory belongs to it now, so building the virtualenv as
+yourself fails on a fresh machine, and where it does succeed it leaves a tree the service
+cannot update:
+
+```bash
+sudo -u "$FLEETLENS_USER" python3 -m venv "$FLEETLENS_HOME/venv"
+sudo -u "$FLEETLENS_USER" "$FLEETLENS_HOME/venv/bin/pip" install \
+  "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
+```
+
+fleetlens is not on PyPI, so the install is from git. Pin the tag rather than tracking
+`main`: an index built by one version is not guaranteed to be readable by another.
 
 ```bash
 sudo npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
 ```
 
 ```bash
-"$FLEETLENS_HOME/venv/bin/fl" doctor
+sudo -u "$FLEETLENS_USER" "$FLEETLENS_HOME/venv/bin/fl" doctor
 ```
 
-Put the token and the home directory in one env file, so the unit and the refresh job read
-the same source:
+Put the token and the paths in one env file next to the index, so the server and the refresh
+timer read the same source. `FLEETLENS_REPOS` goes in because nothing else tells the timer
+where the checkouts are. systemd reads this file as root before dropping privileges, so it
+never has to be readable by you:
 
 ```bash
-printf 'FLEETLENS_HOME=%s\nFLEETLENS_TOKEN=%s\n' "$FLEETLENS_HOME" "$(openssl rand -hex 32)" | sudo tee /etc/fleetlens/env > /dev/null && sudo chmod 640 /etc/fleetlens/env
+printf 'FLEETLENS_HOME=%s\nFLEETLENS_REPOS=%s\nFLEETLENS_TOKEN=%s\n' \
+  "$FLEETLENS_HOME" "$FLEETLENS_REPOS" "$(openssl rand -hex 32)" \
+  | sudo -u "$FLEETLENS_USER" tee "$FLEETLENS_HOME/.env" > /dev/null
+sudo chmod 600 "$FLEETLENS_HOME/.env"
 ```
 
-Build the index. With `FLEETLENS_HOME` set there is no `--db` to pass:
+Build the first index, as the same account. Indexing needs `FLEETLENS_HOME` and nothing
+else, so there is no env file to source here and the token stays where it is:
 
 ```bash
-set -a && . /etc/fleetlens/env && set +a && "$FLEETLENS_HOME/venv/bin/fl" index-all "$FLEETLENS_REPOS"
+sudo -u "$FLEETLENS_USER" env FLEETLENS_HOME="$FLEETLENS_HOME" \
+  "$FLEETLENS_HOME/venv/bin/fl" index-all "$FLEETLENS_REPOS"
 ```
 
-`/etc/systemd/system/fleetlens.service`:
+With `FLEETLENS_HOME` set there is no `--db` to pass: the index lands at
+`$FLEETLENS_HOME/data/fleetlens.db`, which is where the units below look for it.
 
-```ini
+Now the unit. A systemd unit is not a shell script: the executable in `ExecStart=` has to be
+a literal absolute path, and `EnvironmentFile=` and `ReadWritePaths=` are read before the env
+file they point at, so none of them can say `$FLEETLENS_HOME`. Rather than hand-substitute
+the same path in four places, write the file with the shell and let it fill them in:
+
+```bash
+sudo tee /etc/systemd/system/fleetlens.service > /dev/null <<EOF
 [Unit]
 Description=fleetlens MCP server
 After=network.target
 
 [Service]
-User=fleetlens
-EnvironmentFile=/etc/fleetlens/env
-ExecStart=/opt/fleetlens/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
+User=$FLEETLENS_USER
+EnvironmentFile=$FLEETLENS_HOME/.env
+ExecStart=$FLEETLENS_HOME/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
 Restart=always
 
-# The server only reads the index and never touches the repositories.
+# The server never touches the repositories. It reads the index and, when someone pins a
+# build, writes a snapshot of it next to the index, so its own directory must stay writable.
 ProtectSystem=strict
-ReadOnlyPaths=/opt/fleetlens
+ReadWritePaths=$FLEETLENS_HOME
 PrivateTmp=true
 NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
 ```bash
@@ -134,18 +179,67 @@ file and reopens it on the next request**. There is no restart and no downtime.
 fl index-all "$FLEETLENS_REPOS" --db "$FLEETLENS_HOME/data/fleetlens.db.new" && mv "$FLEETLENS_HOME/data/fleetlens.db.new" "$FLEETLENS_HOME/data/fleetlens.db"
 ```
 
-Run it nightly after pulling the checkouts. Under Docker the same thing is
-`docker compose run --rm index`, which already does the build-and-rename.
+Under Docker the same thing is `docker compose run --rm index`, which already does the
+build-and-rename.
+
+On systemd, put it in a timer rather than in someone's memory. Two units, both reading the
+same env file as the server:
+
+The escaped `\$` below are deliberate: those stay in the file so the shell expands them from
+the env file at run time, while `$FLEETLENS_HOME` and `$FLEETLENS_USER` are filled in now.
+
+```bash
+sudo tee /etc/systemd/system/fleetlens-reindex.service > /dev/null <<EOF
+[Unit]
+Description=Rebuild the fleetlens index
+After=network.target
+
+[Service]
+Type=oneshot
+User=$FLEETLENS_USER
+EnvironmentFile=$FLEETLENS_HOME/.env
+ExecStart=/bin/sh -c '$FLEETLENS_HOME/venv/bin/fl index-all "\$FLEETLENS_REPOS" --db "\$FLEETLENS_HOME/data/fleetlens.db.new" && mv "\$FLEETLENS_HOME/data/fleetlens.db.new" "\$FLEETLENS_HOME/data/fleetlens.db"'
+EOF
+```
+
+```bash
+sudo tee /etc/systemd/system/fleetlens-reindex.timer > /dev/null <<'EOF'
+[Unit]
+Description=Rebuild the fleetlens index nightly
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now fleetlens-reindex.timer
+```
+
+Pull the checkouts before it runs, from the same timer or whatever already updates them.
+The index is only as current as the working copies it read.
 
 ## Pinning an index
 
-`fl pin` freezes the served index as a named snapshot for a repeatable evaluation; see the
-package README for the commands. The server needs a writable directory for the snapshots,
-`pins/` next to the index by default or `--pins-dir`. The Docker Compose `serve` service
-mounts `/data` read-only, so give it a writable location for pins (a second volume and
-`--pins-dir`) before using it. Two environment variables set retention:
-`FLEETLENS_RETAIN_PINNED_DAYS` (default 30) and `FLEETLENS_PIN_EXTEND_MAX_DAYS` (default
-10, the most one extension may add). The pin routes use the same token as `/mcp`.
+`fl pin` freezes the served index as a named snapshot for a repeatable evaluation. The
+commands and the full guide are in [pinning.md](pinning.md).
+
+The server needs a writable directory for the snapshots: `pins/` next to the index by
+default, or wherever `--pins-dir` says. Under Compose this is already set up, with the
+index volume still read-only and a separate `fleetlens-pins` volume mounted at `/pins`, so
+pinning works out of the box and the server still cannot write the index. Change it only if
+you want the snapshots somewhere specific, by repointing that volume.
+
+On the systemd deployment the snapshots land under `$FLEETLENS_HOME`, which is why the unit
+above sets `ReadWritePaths` rather than `ReadOnlyPaths`.
+
+Two environment variables set retention: `FLEETLENS_RETAIN_PINNED_DAYS` (default 30) and
+`FLEETLENS_PIN_EXTEND_MAX_DAYS` (default 10, the most one extension may add). The pin routes
+use the same token as `/mcp`.
 
 ## Connecting clients
 

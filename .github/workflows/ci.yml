@@ -91,26 +91,42 @@ jobs:
       - name: Image runs and reports a healthy setup
         run: docker run --rm fleetlens:ci doctor
 
-      # Index a throwaway repo and serve it, so the HTTP transport and the auth boundary
+      # Index a throwaway fleet and serve it, so the HTTP transport and the auth boundary
       # are exercised end to end rather than only unit-tested.
-      - name: Index a sample repo and serve it over HTTP
+      #
+      # Two repos, not one. A single service cannot produce a cross-repo edge, so a
+      # one-repo fixture can only ever prove that the server starts; the claim worth
+      # testing is that `gateway` is derived to call `orders` from source alone.
+      - name: Index a sample fleet and serve it over HTTP
         run: |
           set -euo pipefail
-          mkdir -p sample/app
-          cat > sample/app/main.py <<'PY'
+          mkdir -p sample/orders/app sample/gateway/app
+          cat > sample/orders/app/main.py <<'PY'
           from fastapi import FastAPI
           app = FastAPI()
 
-          @app.get("/orders")
-          def list_orders():
-              return []
+          @app.get("/orders/{order_id}")
+          def get_order(order_id: str):
+              return {"id": order_id}
           PY
+          cat > sample/gateway/app/main.py <<'PY'
+          import requests
+          from fastapi import FastAPI
+          app = FastAPI()
+
+          @app.get("/checkout")
+          def checkout():
+              return requests.get("http://orders/orders/42").json()
+          PY
+          echo '{"ORDERS_HOST": "orders", "PORT": "8080"}' > sample/gateway/config.json
           # scip-python inspects repository metadata, so an un-initialised directory makes
           # the call-graph step fail and the assertion below would pass on an empty index.
-          git init -q sample && git -C sample add -A \
-            && git -C sample -c user.email=ci@example.com -c user.name=ci commit -qm init
+          for r in orders gateway; do
+            git init -q "sample/$r" && git -C "sample/$r" add -A \
+              && git -C "sample/$r" -c user.email=ci@example.com -c user.name=ci commit -qm init
+          done
 
-          docker run --rm -v "$PWD/sample:/repos/sample" -v fl-ci:/data \
+          docker run --rm -v "$PWD/sample:/repos" -v fl-ci:/data \
             fleetlens:ci index-all /repos
           docker run -d --name fl-serve -p 8081:8081 -v fl-ci:/data \
             -e FLEETLENS_TOKEN=ci-token fleetlens:ci serve --http --host 0.0.0.0
@@ -122,22 +138,49 @@ jobs:
           # Assert the sample was actually indexed. Without this the job passes on an
           # empty database, which proves only that the process starts.
           services=$(curl -sf http://localhost:8081/healthz | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"])')
-          test "$services" -ge 1 || { echo "expected >=1 indexed service, got $services"; exit 1; }
+          test "$services" -eq 2 || { echo "expected 2 indexed services, got $services"; exit 1; }
 
           echo "unauthenticated request must be rejected"
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/mcp)
           test "$code" = "401" || { echo "expected 401, got $code"; docker logs fl-serve; exit 1; }
 
-          echo "pin admin routes: create, list, delete, and 401 without a token"
+          echo "pin admin routes: create, list, and 401 without a token"
           auth="Authorization: Bearer ci-token"
           curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' \
             -d '{"alias":"ci-pin","reason":"ci"}' http://localhost:8081/pins
           listing=$(curl -sf -H "$auth" http://localhost:8081/pins)
           echo "$listing"
           echo "$listing" | python3 -c 'import json,sys; p=json.load(sys.stdin)["pins"]; assert [x["alias"] for x in p]==["ci-pin"] and p[0]["expires_at"]'
-          curl -sf -X DELETE -H "$auth" http://localhost:8081/pins/ci-pin
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/pins)
           test "$code" = "401" || { echo "expected 401 on /pins, got $code"; docker logs fl-serve; exit 1; }
+
+      # The part the rest of this job cannot reach: the MCP protocol itself, and whether
+      # the answer is correct rather than merely successful. Runs against the live index
+      # and then the pin created above, because a pin that quietly serves the live index
+      # is the exact failure pinning exists to prevent and both return 200 either way.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: An agent gets the cross-repo answer, live and pinned
+        run: |
+          set -euo pipefail
+          pip install --quiet "mcp>=1.2.0,<2.0"
+          python .github/scripts/mcp_smoke.py --url http://localhost:8081 \
+            --token ci-token --expect-edge gateway:orders
+          python .github/scripts/mcp_smoke.py --url http://localhost:8081 \
+            --token ci-token --expect-edge gateway:orders --pin ci-pin
+
+      - name: Unknown pins 404 rather than falling back, and delete works
+        run: |
+          set -euo pipefail
+          auth="Authorization: Bearer ci-token"
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "$auth" \
+            http://localhost:8081/pins/no-such-pin/mcp)
+          test "$code" = "404" || { echo "expected 404 for an unknown pin, got $code"; exit 1; }
+          curl -sf -X DELETE -H "$auth" http://localhost:8081/pins/ci-pin
+          remaining=$(curl -sf -H "$auth" http://localhost:8081/pins \
+            | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["pins"]))')
+          test "$remaining" = "0" || { echo "pin survived delete"; exit 1; }
 
       - name: Server logs
         if: always()
