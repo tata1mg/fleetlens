@@ -42,6 +42,11 @@ _INDEXERS = {
     },
     "typescript": {
         "tool": "scip-typescript",
+        # Optional for the same reason as scip-ruby, and because `fl doctor` has always
+        # reported it that way: when it is absent, routes, outbound calls and messaging are
+        # still read and only the call edges are missing. Failing the whole repo instead
+        # would lose the other three for a tool the doctor called optional.
+        "optional": True,
         # --infer-tsconfig lets it work even without a committed tsconfig.json.
         "argv": lambda repo, out, name: [
             "scip-typescript", "index", "--infer-tsconfig", "--output", str(out)

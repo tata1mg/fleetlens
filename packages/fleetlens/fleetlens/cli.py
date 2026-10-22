@@ -503,6 +503,22 @@ def _cmd_serve(args) -> int:
         key = os.environ.get(args.api_key_env, "") if args.api_key_env else ""
         embedder = build_embeddings(args.embed_provider, args.embed_model, args.base_url, key)
 
+    # Refuse an index that is not there, rather than creating it. Only --http opens the
+    # store read-only, so without this check stdio would take a mistyped or
+    # wrongly-resolved --db as an instruction to create an empty database and then answer
+    # every question with zero services. An MCP client starts `fl serve` in a working
+    # directory of its own choosing, so a relative --db that was right in the shell is
+    # routinely wrong here, and a silent empty index reads as "fleetlens found nothing"
+    # rather than as a setup mistake.
+    db_path = Path(args.db).expanduser()
+    if args.db != ":memory:" and not db_path.exists():
+        print(f"fl serve: no index at {db_path}\n"
+              f"  build one first:  fl index-all <dir> --db {db_path}\n"
+              f"  or point --db at an existing index (an absolute path is safest here,\n"
+              f"  because an MCP client chooses the working directory, not you).",
+              file=sys.stderr)
+        return 2
+
     live = build_context(args.db, embedder=embedder, read_only=args.http)
     registry = ctx = None
     if args.http:
@@ -632,6 +648,11 @@ def _pin_args(p) -> None:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="fl", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    # Imported here rather than at module scope: `fl --version` must work on a base install,
+    # and the point of the client-base-install CI job is that importing the CLI pulls in
+    # nothing heavy.
+    from . import __version__
+    ap.add_argument("--version", action="version", version=f"fleetlens {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("index", help="index one repo into the store")
