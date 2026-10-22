@@ -2,9 +2,9 @@
 
 > **The cross-repo context your coding agent can't grep for.**
 
-[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/tata1mg/fleetlens/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/status-early-orange.svg)](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md)
+[![Status](https://img.shields.io/badge/status-early-orange.svg)](ROADMAP.md)
 [![MCP](https://img.shields.io/badge/MCP-native-5A4FCF.svg)](https://modelcontextprotocol.io)
 
 Your coding agent can read one repository. Your system does not fit in one.
@@ -23,10 +23,13 @@ queues, and which endpoint maps to which handler. Then it serves that graph to y
 This is what separates fleetlens from a tool that asks a model to read your code.
 
 The graph is built by parsing source. Python and TypeScript syntax trees, Rails routing
-files, and SCIP call graphs. The same commit always produces the same graph. Nothing is
-sampled, so no answer changes because a model was asked the same question twice. Every fact
-records the file and line it came from, along with how confident the parser was, so you can
-go and check it yourself.
+files, and SCIP call graphs. Nothing is sampled, so no answer changes because a model was
+asked the same question twice, and the same commit read by the same toolchain produces the
+same graph. The toolchain is part of that: the call graph is built by an external SCIP
+indexer that resolves imports through the installed dependencies, so a repository whose
+virtualenv has changed can yield different call edges from the same source. Routes, queues
+and outbound calls are read from the syntax tree alone and do not move. Every fact records
+the file and line it came from, so you can go and check it yourself.
 
 When a parser cannot work out a path, it writes down where it got stuck instead of guessing.
 A route fleetlens could not read becomes a number in the output that you can act on. This
@@ -82,14 +85,25 @@ Index a folder of service repos into one shared SQLite file, then serve it:
 
 ```bash
 fl doctor
-fl index-all /path/to/your/services --db fleet.db
-fl serve --db fleet.db
+fl index-all /path/to/your/services --db "$PWD/fleetlens.db"
+fl serve --db "$PWD/fleetlens.db"
 ```
 
-Point your MCP client at it over stdio:
+Point your MCP client at it over stdio. Use absolute paths for both the executable and the
+index: the client starts `fl` in a working directory of its own choosing, and it does not
+read your shell's `PATH`, so a relative `--db` and a bare `fl` are the two things that most
+often turn a working index into an agent that reports no services. `which fl` gives you the
+first, and the `$PWD` above gives you the second.
 
 ```json
-{ "mcpServers": { "fleetlens": { "command": "fl", "args": ["serve", "--db", "fleet.db"] } } }
+{
+  "mcpServers": {
+    "fleetlens": {
+      "command": "/absolute/path/to/fl",
+      "args": ["serve", "--db", "/absolute/path/to/fleetlens.db"]
+    }
+  }
+}
 ```
 
 Now ask your agent what the orders service exposes, or what breaks if you change
@@ -97,15 +111,15 @@ Now ask your agent what the orders service exposes, or what breaks if you change
 
 To share one index with a team, `fl serve --http` serves the same tools over
 streamable-HTTP behind a shared bearer token, with the index opened read-only. See
-[docs/deployment.md](https://github.com/tata1mg/fleetlens/blob/main/docs/deployment.md).
+[docs/deployment.md](docs/deployment.md).
 
 <details>
 <summary>Other commands</summary>
 
 ```bash
-fl index /path/to/repo --db fleet.db     # a single repo instead of a fleet
-fl resolve --db fleet.db                 # recompute cross-repo edges
-fl export-graph --db fleet.db -o mesh.html   # self-contained HTML render, no server
+fl index /path/to/repo --db fleetlens.db     # a single repo instead of a fleet
+fl resolve --db fleetlens.db                 # recompute cross-repo edges
+fl export-graph --db fleetlens.db -o mesh.html   # self-contained HTML render, no server
 ```
 </details>
 
@@ -138,8 +152,10 @@ The index is rebuilt on a schedule, which is what you want day to day and exactl
 moment you are measuring something. Change a prompt, rerun the agent, get a different answer,
 and you cannot tell whether your change did it or the index moved underneath you.
 
-Pinning freezes a copy of the index and serves it at its own URL, so you can come back
-tomorrow and get the same answers:
+Pinning freezes a copy of the index and serves it at its own URL, so the same question
+gets the same context tomorrow. It fixes fleetlens's side of the experiment, not the model's:
+an agent may still word things differently run to run, but it is no longer reading a
+different fleet.
 
 ```bash
 fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
@@ -158,7 +174,7 @@ works just as well from CI.
 
 Every answer also carries the build id, the schema version and the commit each repository was
 at, through `get_index_info`, so a measurement stays attributable after the pin has expired.
-[Full guide](https://github.com/tata1mg/fleetlens/blob/main/docs/pinning.md).
+[Full guide](docs/pinning.md).
 
 ### The graph as a file, with no server
 
@@ -240,7 +256,7 @@ than guess, because a wrong answer invents a dependency that never existed.
 
 Two escape hatches for the addresses they decline. Declare the mapping in `fleetlens.yaml`
 under `hosts:`, which needs no code, or register your own resolver, which is a class with one
-method and no fork: [writing a host resolver](https://github.com/tata1mg/fleetlens/blob/main/CONTRIBUTING.md#writing-a-host-resolver).
+method and no fork: [writing a host resolver](CONTRIBUTING.md#writing-a-host-resolver).
 
 An address declared in config is evidence of intent to call, not proof of a call, since a
 config may list a host nobody uses. These edges carry `confidence: config`, and are upgraded to
@@ -255,7 +271,7 @@ to `.context/skipped.json`.
 
 ```bash
 ollama pull qwen2.5-coder:7b
-fl index <repo> --db fleet.db --fill-gaps   # resolve those sites, and only those
+fl index <repo> --db fleetlens.db --fill-gaps   # resolve those sites, and only those
 ```
 
 Each site gets the snippet plus the definitions it references, and every answer is
@@ -273,8 +289,8 @@ work too (`--provider openai`), and those do send code to an API, which is why t
 ```bash
 ollama pull bge-m3            # embeddings
 ollama pull qwen2.5-coder:7b  # summaries
-fl enrich --db fleet.db                       # summaries + embeddings, only what changed
-fl serve  --db fleet.db --embed-model bge-m3  # enables discover_* tools
+fl enrich --db fleetlens.db                       # summaries + embeddings, only what changed
+fl serve  --db fleetlens.db --embed-model bge-m3  # enables discover_* tools
 ```
 
 `fl enrich` writes both summaries and embeddings by default, so it needs both models and
@@ -342,16 +358,25 @@ apply.
 
 ## How it compares
 
+The comparison worth making is where each one's facts come from, because that is what does
+not change when any of these ships a new feature.
+
 |  | fleetlens | Sourcegraph / SCIP | Backstage | OpenTelemetry |
 |---|---|---|---|---|
-| Cross-repo service graph | derived from source | repo-scoped navigation | hand-written YAML | derived from traces |
+| Where the service graph comes from | parsed from source | a code index, built for navigation | entries people maintain | observed traces |
 | Needs running services | no | no | no | **yes** |
-| Needs a human-maintained catalog | no | no | **yes** | no |
-| Reports what it couldn't determine | **yes** | n/a | no | no |
-| Built for agents (MCP) | **yes** | no | no | no |
+| Needs people to keep it current | no | no | **yes** | no |
+| Sees a path that never executed | **yes** | yes | n/a | **no** |
+
+That last row is the real split with tracing: a dependency only exercised by a rare code
+path produces no spans, so it is absent from a trace-derived graph and present in a parsed
+one. The split with a code index is narrower, and is about the question being answered:
+navigation is per-symbol, where this is a service-to-service graph joined across repository
+boundaries.
 
 fleetlens is not a code-search engine, not a service catalog you curate, and not a repo
-chatbot. It is the derived graph that sits underneath those.
+chatbot. It is the derived graph that sits underneath those, and MCP is its only interface:
+there is no UI, because the reader is an agent.
 
 ---
 
@@ -394,7 +419,9 @@ of them and a repository in one of those languages is not discovered by a fleet 
 
 1. Deterministic first; LLM optional.
 2. Source-only ingestion. Never boot a service.
-3. Every fact carries provenance and confidence.
+3. Every fact carries provenance: the file and line it was read from. Derived
+   relationships carry a confidence label as well, because joining two repositories
+   is an inference and reading a route out of a file is not.
 4. Report the gaps instead of guessing.
 5. Pluggable producers behind one write contract, so adding a framework never touches the core.
 
@@ -409,12 +436,12 @@ endpoint paths, handler names and docstrings.
 
 `fl serve --http` is protected by one shared bearer token and offers no TLS, no per-user
 identity and no rotation without a restart. Run it on a private network. More in
-[SECURITY.md](https://github.com/tata1mg/fleetlens/blob/main/SECURITY.md).
+[SECURITY.md](SECURITY.md).
 
 ## Contributing
 
 Adding a framework adapter is the highest-leverage contribution and does not touch the core.
-See [CONTRIBUTING.md](https://github.com/tata1mg/fleetlens/blob/main/CONTRIBUTING.md). Bug reports that include the repo shape
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports that include the repo shape
 that confused a parser are especially welcome.
 
 ## Benchmark
@@ -444,8 +471,8 @@ an optimistic figure rather than a measured effect.
 One corpus, one framework family, one agent. Treat the numbers as indicative rather than
 general. The questions, the ground truth, the harness, the scoring and the questions where
 fleetlens did not help are all in
-[BENCHMARK.md](https://github.com/tata1mg/fleetlens/blob/main/BENCHMARK.md) and
-[`bench/`](https://github.com/tata1mg/fleetlens/tree/main/bench).
+[BENCHMARK.md](BENCHMARK.md) and
+[`bench/`](bench).
 
 ### Server performance
 
@@ -481,9 +508,9 @@ because on the benchmark corpus, asking the same question the other way round to
 And `find_symbol` has to read every symbol when the search term matches nothing, because a
 substring search cannot use a database index. A term that does match comes back in about six
 milliseconds. Fixing that is the next thing on
-[ROADMAP.md](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md).
+[ROADMAP.md](ROADMAP.md).
 
-Reproduce with [`bench/mcp_perf.py`](https://github.com/tata1mg/fleetlens/blob/main/bench/mcp_perf.py), which samples its
+Reproduce with [`bench/mcp_perf.py`](bench/mcp_perf.py), which samples its
 arguments from whatever index it is pointed at:
 
 ```bash
@@ -502,7 +529,7 @@ shows.
 
 ## Roadmap
 
-See [ROADMAP.md](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md).
+See [ROADMAP.md](ROADMAP.md).
 
 ## License
 

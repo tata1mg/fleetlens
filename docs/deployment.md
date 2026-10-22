@@ -16,11 +16,22 @@ engineer indexing the same repositories on their own machine.
 No deployment, no token, no container.
 
 ```bash
-fl index-all /path/to/your/repos
+fl index-all /path/to/your/repos --db "$PWD/fleetlens.db"
 ```
 
+Absolute paths in the client config, for both the executable and the index. The client
+starts `fl` in a working directory of its own and without your shell's `PATH`, so a
+relative `--db` points somewhere else and a bare `fl` may not be found at all.
+
 ```json
-{ "mcpServers": { "fleetlens": { "command": "fl", "args": ["serve", "--db", "fleetlens.db"] } } }
+{
+  "mcpServers": {
+    "fleetlens": {
+      "command": "/absolute/path/to/fl",
+      "args": ["serve", "--db", "/absolute/path/to/fleetlens.db"]
+    }
+  }
+}
 ```
 
 If that answers useful questions about your fleet, the rest of this page is worth doing.
@@ -61,10 +72,20 @@ FLEETLENS_REPOS=/srv/repos             # your checkouts; can be anywhere
 FLEETLENS_USER=fleetlens               # the account that runs it
 ```
 
-`$FLEETLENS_HOME` is fleetlens's own directory and the index is the only thing it keeps
-there. The repositories are separate and must be **writable** by `$FLEETLENS_USER`,
-because indexing writes a `.context/` directory into each one. That is the only
-non-obvious permission in this setup.
+`$FLEETLENS_HOME` is fleetlens's own directory. The index lives there, and so do pin
+snapshots, so it has to be writable by the account that serves. The repositories are
+separate and must **also** be writable by `$FLEETLENS_USER`, because indexing writes a
+`.context/` directory into each one. Those two are the only non-obvious permissions here.
+
+Create the account and the directories first. The unit below runs as `$FLEETLENS_USER`, so
+anything it writes has to belong to that account:
+
+```bash
+sudo useradd --system --home-dir "$FLEETLENS_HOME" --shell /usr/sbin/nologin "$FLEETLENS_USER" || true
+sudo mkdir -p "$FLEETLENS_HOME" /etc/fleetlens
+sudo chown -R "$FLEETLENS_USER:$FLEETLENS_USER" "$FLEETLENS_HOME"
+sudo chown -R "$FLEETLENS_USER:$FLEETLENS_USER" "$FLEETLENS_REPOS"
+```
 
 Install:
 
@@ -87,8 +108,14 @@ sudo npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
 Put the token and the home directory in one env file, so the unit and the refresh job read
 the same source:
 
+`FLEETLENS_REPOS` goes in too, because the refresh job reads this file and nothing else
+tells it where the checkouts are:
+
 ```bash
-printf 'FLEETLENS_HOME=%s\nFLEETLENS_TOKEN=%s\n' "$FLEETLENS_HOME" "$(openssl rand -hex 32)" | sudo tee /etc/fleetlens/env > /dev/null && sudo chmod 640 /etc/fleetlens/env
+printf 'FLEETLENS_HOME=%s\nFLEETLENS_REPOS=%s\nFLEETLENS_TOKEN=%s\n' \
+  "$FLEETLENS_HOME" "$FLEETLENS_REPOS" "$(openssl rand -hex 32)" \
+  | sudo tee /etc/fleetlens/env > /dev/null
+sudo chown root:"$FLEETLENS_USER" /etc/fleetlens/env && sudo chmod 640 /etc/fleetlens/env
 ```
 
 Build the index. With `FLEETLENS_HOME` set there is no `--db` to pass:
@@ -139,18 +166,64 @@ file and reopens it on the next request**. There is no restart and no downtime.
 fl index-all "$FLEETLENS_REPOS" --db "$FLEETLENS_HOME/data/fleetlens.db.new" && mv "$FLEETLENS_HOME/data/fleetlens.db.new" "$FLEETLENS_HOME/data/fleetlens.db"
 ```
 
-Run it nightly after pulling the checkouts. Under Docker the same thing is
-`docker compose run --rm index`, which already does the build-and-rename.
+Under Docker the same thing is `docker compose run --rm index`, which already does the
+build-and-rename.
+
+On systemd, put it in a timer rather than in someone's memory. Two units, both reading the
+same env file as the server:
+
+`/etc/systemd/system/fleetlens-reindex.service`:
+
+```ini
+[Unit]
+Description=Rebuild the fleetlens index
+After=network.target
+
+[Service]
+Type=oneshot
+User=fleetlens
+EnvironmentFile=/etc/fleetlens/env
+ExecStart=/bin/sh -c '/opt/fleetlens/venv/bin/fl index-all "$FLEETLENS_REPOS" --db "$FLEETLENS_HOME/data/fleetlens.db.new" && mv "$FLEETLENS_HOME/data/fleetlens.db.new" "$FLEETLENS_HOME/data/fleetlens.db"'
+```
+
+`/etc/systemd/system/fleetlens-reindex.timer`:
+
+```ini
+[Unit]
+Description=Rebuild the fleetlens index nightly
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now fleetlens-reindex.timer
+```
+
+Pull the checkouts before it runs, from the same timer or whatever already updates them.
+The index is only as current as the working copies it read.
 
 ## Pinning an index
 
-`fl pin` freezes the served index as a named snapshot for a repeatable evaluation; see the
-package README for the commands. The server needs a writable directory for the snapshots,
-`pins/` next to the index by default or `--pins-dir`. The Docker Compose `serve` service
-mounts `/data` read-only, so give it a writable location for pins (a second volume and
-`--pins-dir`) before using it. Two environment variables set retention:
-`FLEETLENS_RETAIN_PINNED_DAYS` (default 30) and `FLEETLENS_PIN_EXTEND_MAX_DAYS` (default
-10, the most one extension may add). The pin routes use the same token as `/mcp`.
+`fl pin` freezes the served index as a named snapshot for a repeatable evaluation. The
+commands and the full guide are in [pinning.md](pinning.md).
+
+The server needs a writable directory for the snapshots: `pins/` next to the index by
+default, or wherever `--pins-dir` says. Under Compose this is already set up, with the
+index volume still read-only and a separate `fleetlens-pins` volume mounted at `/pins`, so
+pinning works out of the box and the server still cannot write the index. Change it only if
+you want the snapshots somewhere specific, by repointing that volume.
+
+On the systemd deployment the snapshots land under `$FLEETLENS_HOME`, which is why the unit
+above sets `ReadWritePaths` rather than `ReadOnlyPaths`.
+
+Two environment variables set retention: `FLEETLENS_RETAIN_PINNED_DAYS` (default 30) and
+`FLEETLENS_PIN_EXTEND_MAX_DAYS` (default 10, the most one extension may add). The pin routes
+use the same token as `/mcp`.
 
 ## Connecting clients
 

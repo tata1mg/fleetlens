@@ -5,14 +5,20 @@ descriptive rather than a schedule, and dates are deliberately absent.
 
 ## What works today
 
-**Languages.** Python, TypeScript, JavaScript and Ruby, and what is found differs by
-language. Python is complete. TypeScript has routes, outbound calls and queues.
-JavaScript has routes only: outbound and queue detection read `.ts` and `.tsx` files, so a
-`.js` service appears in the graph but makes no outgoing edges. Ruby has routes and
-outbound calls. The call graph additionally needs a SCIP indexer: `scip-python` and
-`scip-typescript` install from npm, while Ruby needs a Sorbet setup, so Ruby routes and
-queues work out of the box but callers and callees do not. The README carries the full
-matrix.
+**Languages.** Python, TypeScript, JavaScript and Ruby, and what is found differs enough by
+language that the [matrix in the README](README.md#what-it-cant-do-yet) is the authoritative
+version of this paragraph.
+
+In short: Python has all four of routes, outbound calls, queues and a call graph. TypeScript
+has the same, with routes limited to Express. JavaScript has Express routes only, because
+outbound and queue detection read `.ts` and `.tsx`, so a `.js` service appears in the graph
+but makes no outgoing edges. Ruby has Rails routes and outbound calls; its queues are found
+only from configuration keys, since there is no Ruby code-site scanner, and a
+`Sidekiq`-style declaration in `.rb` source is not read.
+
+The call graph needs a SCIP indexer on top: `scip-python` and `scip-typescript` install from
+npm, Ruby needs a Sorbet setup. Where one is missing, routes, outbound calls and queues are
+still read and only callers and callees are lost.
 
 **Frameworks.** FastAPI, Flask, Sanic and Starlette; Express; Rails. Routes are read from
 what a module does rather than from what it imports, so a framework not on that list, an
