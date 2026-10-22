@@ -64,7 +64,9 @@ fifty lines; read it rather than treating it as magic.
 
 ## Serve a team without Docker
 
-Same thing, managed by systemd. Substitute your own paths:
+Same thing, managed by systemd. Set these three once, in the shell you run the rest of this
+section in. Every command below, the unit files included, is written in terms of them, so
+changing a path here is the only edit you have to make:
 
 ```bash
 FLEETLENS_HOME=/opt/fleetlens          # the directory fleetlens owns; the index lives here
@@ -130,28 +132,33 @@ sudo -u "$FLEETLENS_USER" env FLEETLENS_HOME="$FLEETLENS_HOME" \
 With `FLEETLENS_HOME` set there is no `--db` to pass: the index lands at
 `$FLEETLENS_HOME/data/fleetlens.db`, which is where the units below look for it.
 
-`/etc/systemd/system/fleetlens.service`:
+Now the unit. A systemd unit is not a shell script: the executable in `ExecStart=` has to be
+a literal absolute path, and `EnvironmentFile=` and `ReadWritePaths=` are read before the env
+file they point at, so none of them can say `$FLEETLENS_HOME`. Rather than hand-substitute
+the same path in four places, write the file with the shell and let it fill them in:
 
-```ini
+```bash
+sudo tee /etc/systemd/system/fleetlens.service > /dev/null <<EOF
 [Unit]
 Description=fleetlens MCP server
 After=network.target
 
 [Service]
-User=fleetlens
-EnvironmentFile=/opt/fleetlens/.env
-ExecStart=/opt/fleetlens/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
+User=$FLEETLENS_USER
+EnvironmentFile=$FLEETLENS_HOME/.env
+ExecStart=$FLEETLENS_HOME/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
 Restart=always
 
 # The server never touches the repositories. It reads the index and, when someone pins a
 # build, writes a snapshot of it next to the index, so its own directory must stay writable.
 ProtectSystem=strict
-ReadWritePaths=/opt/fleetlens
+ReadWritePaths=$FLEETLENS_HOME
 PrivateTmp=true
 NoNewPrivileges=true
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
 ```bash
@@ -178,23 +185,25 @@ build-and-rename.
 On systemd, put it in a timer rather than in someone's memory. Two units, both reading the
 same env file as the server:
 
-`/etc/systemd/system/fleetlens-reindex.service`:
+The escaped `\$` below are deliberate: those stay in the file so the shell expands them from
+the env file at run time, while `$FLEETLENS_HOME` and `$FLEETLENS_USER` are filled in now.
 
-```ini
+```bash
+sudo tee /etc/systemd/system/fleetlens-reindex.service > /dev/null <<EOF
 [Unit]
 Description=Rebuild the fleetlens index
 After=network.target
 
 [Service]
 Type=oneshot
-User=fleetlens
-EnvironmentFile=/opt/fleetlens/.env
-ExecStart=/bin/sh -c '/opt/fleetlens/venv/bin/fl index-all "$FLEETLENS_REPOS" --db "$FLEETLENS_HOME/data/fleetlens.db.new" && mv "$FLEETLENS_HOME/data/fleetlens.db.new" "$FLEETLENS_HOME/data/fleetlens.db"'
+User=$FLEETLENS_USER
+EnvironmentFile=$FLEETLENS_HOME/.env
+ExecStart=/bin/sh -c '$FLEETLENS_HOME/venv/bin/fl index-all "\$FLEETLENS_REPOS" --db "\$FLEETLENS_HOME/data/fleetlens.db.new" && mv "\$FLEETLENS_HOME/data/fleetlens.db.new" "\$FLEETLENS_HOME/data/fleetlens.db"'
+EOF
 ```
 
-`/etc/systemd/system/fleetlens-reindex.timer`:
-
-```ini
+```bash
+sudo tee /etc/systemd/system/fleetlens-reindex.timer > /dev/null <<'EOF'
 [Unit]
 Description=Rebuild the fleetlens index nightly
 
@@ -204,6 +213,7 @@ Persistent=true
 
 [Install]
 WantedBy=timers.target
+EOF
 ```
 
 ```bash
