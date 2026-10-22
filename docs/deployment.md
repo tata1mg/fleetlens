@@ -82,15 +82,17 @@ anything it writes has to belong to that account:
 
 ```bash
 sudo useradd --system --home-dir "$FLEETLENS_HOME" --shell /usr/sbin/nologin "$FLEETLENS_USER" || true
-sudo mkdir -p "$FLEETLENS_HOME" /etc/fleetlens
-sudo chown -R "$FLEETLENS_USER:$FLEETLENS_USER" "$FLEETLENS_HOME"
-sudo chown -R "$FLEETLENS_USER:$FLEETLENS_USER" "$FLEETLENS_REPOS"
+sudo mkdir -p "$FLEETLENS_HOME"
+sudo chown -R "$FLEETLENS_USER:$FLEETLENS_USER" "$FLEETLENS_HOME" "$FLEETLENS_REPOS"
 ```
 
-Install:
+Install **as that account**. The directory belongs to it now, so building the virtualenv as
+yourself fails on a fresh machine, and where it does succeed it leaves a tree the service
+cannot update:
 
 ```bash
-python3 -m venv "$FLEETLENS_HOME/venv" && "$FLEETLENS_HOME/venv/bin/pip" install \
+sudo -u "$FLEETLENS_USER" python3 -m venv "$FLEETLENS_HOME/venv"
+sudo -u "$FLEETLENS_USER" "$FLEETLENS_HOME/venv/bin/pip" install \
   "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
 ```
 
@@ -102,27 +104,31 @@ sudo npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
 ```
 
 ```bash
-"$FLEETLENS_HOME/venv/bin/fl" doctor
+sudo -u "$FLEETLENS_USER" "$FLEETLENS_HOME/venv/bin/fl" doctor
 ```
 
-Put the token and the home directory in one env file, so the unit and the refresh job read
-the same source:
-
-`FLEETLENS_REPOS` goes in too, because the refresh job reads this file and nothing else
-tells it where the checkouts are:
+Put the token and the paths in one env file next to the index, so the server and the refresh
+timer read the same source. `FLEETLENS_REPOS` goes in because nothing else tells the timer
+where the checkouts are. systemd reads this file as root before dropping privileges, so it
+never has to be readable by you:
 
 ```bash
 printf 'FLEETLENS_HOME=%s\nFLEETLENS_REPOS=%s\nFLEETLENS_TOKEN=%s\n' \
   "$FLEETLENS_HOME" "$FLEETLENS_REPOS" "$(openssl rand -hex 32)" \
-  | sudo tee /etc/fleetlens/env > /dev/null
-sudo chown root:"$FLEETLENS_USER" /etc/fleetlens/env && sudo chmod 640 /etc/fleetlens/env
+  | sudo -u "$FLEETLENS_USER" tee "$FLEETLENS_HOME/.env" > /dev/null
+sudo chmod 600 "$FLEETLENS_HOME/.env"
 ```
 
-Build the index. With `FLEETLENS_HOME` set there is no `--db` to pass:
+Build the first index, as the same account. Indexing needs `FLEETLENS_HOME` and nothing
+else, so there is no env file to source here and the token stays where it is:
 
 ```bash
-set -a && . /etc/fleetlens/env && set +a && "$FLEETLENS_HOME/venv/bin/fl" index-all "$FLEETLENS_REPOS"
+sudo -u "$FLEETLENS_USER" env FLEETLENS_HOME="$FLEETLENS_HOME" \
+  "$FLEETLENS_HOME/venv/bin/fl" index-all "$FLEETLENS_REPOS"
 ```
+
+With `FLEETLENS_HOME` set there is no `--db` to pass: the index lands at
+`$FLEETLENS_HOME/data/fleetlens.db`, which is where the units below look for it.
 
 `/etc/systemd/system/fleetlens.service`:
 
@@ -133,7 +139,7 @@ After=network.target
 
 [Service]
 User=fleetlens
-EnvironmentFile=/etc/fleetlens/env
+EnvironmentFile=/opt/fleetlens/.env
 ExecStart=/opt/fleetlens/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
 Restart=always
 
@@ -182,7 +188,7 @@ After=network.target
 [Service]
 Type=oneshot
 User=fleetlens
-EnvironmentFile=/etc/fleetlens/env
+EnvironmentFile=/opt/fleetlens/.env
 ExecStart=/bin/sh -c '/opt/fleetlens/venv/bin/fl index-all "$FLEETLENS_REPOS" --db "$FLEETLENS_HOME/data/fleetlens.db.new" && mv "$FLEETLENS_HOME/data/fleetlens.db.new" "$FLEETLENS_HOME/data/fleetlens.db"'
 ```
 

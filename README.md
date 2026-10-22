@@ -28,7 +28,8 @@ asked the same question twice, and the same commit read by the same toolchain pr
 same graph. The toolchain is part of that: the call graph is built by an external SCIP
 indexer that resolves imports through the installed dependencies, so a repository whose
 virtualenv has changed can yield different call edges from the same source. Routes, queues
-and outbound calls are read from the syntax tree alone and do not move. Every fact records
+and outbound calls are read from the syntax tree alone, so they move only when the source or
+fleetlens's own parsers change. Every fact records
 the file and line it came from, so you can go and check it yourself.
 
 When a parser cannot work out a path, it writes down where it got stuck instead of guessing.
@@ -89,11 +90,17 @@ fl index-all /path/to/your/services --db "$PWD/fleetlens.db"
 fl serve --db "$PWD/fleetlens.db"
 ```
 
-Point your MCP client at it over stdio. Use absolute paths for both the executable and the
-index: the client starts `fl` in a working directory of its own choosing, and it does not
-read your shell's `PATH`, so a relative `--db` and a bare `fl` are the two things that most
-often turn a working index into an agent that reports no services. `which fl` gives you the
-first, and the `$PWD` above gives you the second.
+Point your MCP client at it over stdio. On Claude Code that is one command, and `which`
+and `$PWD` fill in the two paths for you:
+
+```bash
+claude mcp add fleetlens -- "$(which fl)" serve --db "$PWD/fleetlens.db"
+```
+
+Any other client wants the same thing as JSON. Use absolute paths for both the executable
+and the index: the client starts `fl` in a working directory of its own choosing, and it
+does not read your shell's `PATH`, so a relative `--db` and a bare `fl` are the two things
+that most often turn a working index into an agent that reports no services.
 
 ```json
 {
@@ -167,7 +174,7 @@ http://fleetlens.internal:8081/mcp               # always the newest index
 http://fleetlens.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
 ```
 
-Same tools, same token, same responses, and an alias that does not exist returns 404 rather
+Same tools, same token, same indexed context, and an alias that does not exist returns 404 rather
 than quietly falling back to the live index. `fl pin list`, `fl pin extend` and `fl unpin`
 manage them, and all four are a thin convenience over plain HTTP on the same port, so curl
 works just as well from CI.
@@ -363,16 +370,23 @@ not change when any of these ships a new feature.
 
 |  | fleetlens | Sourcegraph / SCIP | Backstage | OpenTelemetry |
 |---|---|---|---|---|
-| Where the service graph comes from | parsed from source | a code index, built for navigation | entries people maintain | observed traces |
+| Where the service graph comes from | parsed from source | a code index, built for navigation | a catalog you own and populate | observed traces |
 | Needs running services | no | no | no | **yes** |
-| Needs people to keep it current | no | no | **yes** | no |
+| Relationships come from code, not description | **yes** | **yes** | no | **yes** |
 | Sees a path that never executed | **yes** | yes | n/a | **no** |
 
-That last row is the real split with tracing: a dependency only exercised by a rare code
-path produces no spans, so it is absent from a trace-derived graph and present in a parsed
-one. The split with a code index is narrower, and is about the question being answered:
+The last row is the real split with tracing: a dependency only exercised by a rare code path
+produces no spans, so it is absent from a trace-derived graph and present in a parsed one.
+The split with a code index is narrower, and is about the question being answered:
 navigation is per-symbol, where this is a service-to-service graph joined across repository
 boundaries.
+
+The split with a catalog is about where a relationship comes from rather than how much
+typing it costs. Backstage can register entities automatically through discovery providers,
+so the catalog need not be assembled by hand; what a service depends on is still something
+the descriptor states, and a descriptor can be right, stale or absent independently of the
+code. Here that edge is read out of the call site, which is why it carries a file and a line
+and a confidence rather than an author.
 
 fleetlens is not a code-search engine, not a service catalog you curate, and not a repo
 chatbot. It is the derived graph that sits underneath those, and MCP is its only interface:
