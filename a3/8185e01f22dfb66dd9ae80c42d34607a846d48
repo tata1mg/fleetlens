@@ -1,0 +1,27 @@
+README.md
+  s_d5ea2fae8a9c21::t_82e9d20e386ae8 378-380,384-389
+  s_d5ea2fae8a9c21::t_768b72cfb4a372 31-32,177,373,375
+  s_d5ea2fae8a9c21::t_3a8a7ff7f64364 93-103
+  s_d5ea2fae8a9c21::t_2dcb56f79c5f2f 390
+docs/deployment.md
+  s_d5ea2fae8a9c21::t_950a6011a6aa0a 85-86,89-91,94-95
+  s_d5ea2fae8a9c21::t_034df67d7f3c61 107,110-113,118-119,122-123,126-127,130-131
+  s_d5ea2fae8a9c21::t_83e521e7b9aaea 142,191
+  s_d5ea2fae8a9c21::t_45bb13515a7d67 132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a38185e01f22dfb66dd9ae80c42d34607a846d48",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
