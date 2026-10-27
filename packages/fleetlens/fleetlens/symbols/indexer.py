@@ -77,6 +77,21 @@ def _body_hash(src: bytes) -> str:
     return hashlib.sha1(src).hexdigest()[:12]
 
 
+def file_sha(path: Path) -> str:
+    """Hash of a whole source file, recorded next to every symbol taken from it.
+
+    `body_hash` answers "did this definition change"; this answers "is the file I am
+    looking at now the one these line spans were measured against". They are different
+    questions, and only the second one can tell a reader that a span is safe to trust: a
+    span is a pair of line numbers, and line numbers mean nothing without the file they
+    were counted in.
+    """
+    try:
+        return hashlib.sha1(path.read_bytes()).hexdigest()[:12]
+    except OSError:
+        return ""
+
+
 def _name_of(node) -> Optional[str]:
     """Best-effort definition name: the `name` field, else an identifier child."""
     n = node.child_by_field_name("name")
@@ -175,11 +190,12 @@ def build_index(repo: Path) -> dict:
         got = list(index_file(path, rel))
         if got:
             files += 1
+        fsha = file_sha(path) if got else ""
         for s in got:
             symbols[s.symbol_id] = {
                 "path": s.path, "lang": s.lang, "kind": s.kind,
                 "line_start": s.line_start, "line_end": s.line_end,
-                "body_hash": s.body_hash,
+                "body_hash": s.body_hash, "file_sha": fsha,
             }
     return {
         "schema": "symbols/v1",

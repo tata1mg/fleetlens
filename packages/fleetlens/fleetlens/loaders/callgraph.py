@@ -29,7 +29,10 @@ def _node_object(slug: str, node: dict) -> KnowledgeObject:
         embed_text=None,
         payload={"path": node["path"], "qualname": qual, "kind": node["kind"],
                  "lang": node["lang"], "line_start": node["line_start"],
-                 "line_end": node["line_end"]},
+                 "line_end": node["line_end"],
+                 # What the span was measured against. Without it a line number is a
+                 # number, and anything reading the file back is guessing.
+                 "file_sha": node.get("file_sha", "")},
     )
 
 

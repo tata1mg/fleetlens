@@ -50,9 +50,12 @@ def register(mcp, ctx, *, http: bool = False) -> None:
         There is no whole-file mode: read the symbols you need rather than the files they
         are in.
 
-        The source is read at the commit the index was built from, so it matches the span
-        the index reported, and a pinned index returns the code as of that pin. `commit`
-        says which. If history no longer holds that commit the working copy is used instead
-        and `stale` is true, which means the lines may no longer be the symbol named.
+        The source is checked against a hash of the file the index actually parsed. It
+        reads the commit the index was built from first, falls back to the working copy,
+        and returns whichever matches, saying which in `read_from`; a pinned index reads
+        at the pin's commit. `verified` is false only for indexes built before those
+        hashes existed. When nothing matches you get `span_mismatch` and no source, which
+        means the index is stale for that file and needs rebuilding: the lines would
+        otherwise land on a neighbouring function and read perfectly.
         """
         return ctx.source.get_source(symbol_id, context_lines, max_lines)

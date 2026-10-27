@@ -5,6 +5,7 @@ what it returns must match the index that pointed at it. The rest is bounds.
 """
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -45,6 +46,11 @@ def something_entirely_different():
 """
 
 
+def _sha(path: Path) -> str:
+    """The same hash the indexer records for a file."""
+    return hashlib.sha1(path.read_bytes()).hexdigest()[:12]
+
+
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(repo), *args], check=True,
                    capture_output=True, text=True)
@@ -78,7 +84,8 @@ def _build(base: Path):
         "code_symbol", "orders:app/main.py::get_order", "get_order", None, "unknown",
         "callgraph", "callgraph", None, None,
         {"path": "app/main.py", "qualname": "get_order", "kind": "function",
-         "lang": "python", "line_start": 6, "line_end": 9}))
+         "lang": "python", "line_start": 6, "line_end": 9,
+         "file_sha": _sha(repo / "app" / "main.py")}))
     store.stamp_build({repo.name: sha})
     store.commit()
     return repo, store
@@ -159,7 +166,8 @@ def test_returns_the_symbol_body_with_its_commit(indexed):
     assert out["status"] == "ok", out
     assert "def get_order" in out["source"]
     assert "order_id must be numeric" in out["source"]      # the validation, the point
-    assert out["stale"] is False
+    assert out["read_from"] == "commit"
+    assert out["verified"] is True, "the bytes read must hash to what was indexed"
     assert out["commit"], "an indexed commit should have been used"
 
 
@@ -183,25 +191,79 @@ def test_reads_the_indexed_commit_not_the_working_tree(indexed_fresh):
     assert after["status"] == "ok", after
     assert after["source"] == before["source"]
     assert "something_entirely_different" not in after["source"]
-    assert after["stale"] is False
+    assert after["read_from"] == "commit" and after["verified"] is True
 
 
-def test_says_so_when_it_has_to_fall_back_to_disk(indexed, monkeypatch):
-    """A commit that history no longer holds must degrade loudly, not silently."""
+def test_falls_back_to_disk_and_still_verifies(indexed, monkeypatch):
+    """A commit history no longer holds is not a reason to give up or to guess.
+
+    The working copy is the other place the file might be, and the hash says whether it is
+    the right one. Here it is, so the read succeeds and reports where it came from.
+    """
     repo, store = indexed
     from fleetlens.service import source as mod
 
-    real = mod._git
-
-    def no_history(args, cwd):
-        return None if args and args[0] == "show" else real(args, cwd)
-
-    monkeypatch.setattr(mod, "_git", no_history)
+    real = mod._git_bytes
+    monkeypatch.setattr(mod, "_git_bytes",
+                        lambda args, cwd: None if args[:1] == ["show"] else real(args, cwd))
     out = mod.SourceService(store, store).get_source(_symbol(store))
 
     assert out["status"] == "ok"
-    assert out["stale"] is True
+    assert out["read_from"] == "working tree"
+    assert out["verified"] is True
     assert out["commit"] is None
+    assert "def get_order" in out["source"]
+
+
+def test_a_span_that_matches_nothing_refuses_instead_of_guessing(indexed_fresh):
+    """The bug this was reported for.
+
+    A tester found spans about fifteen lines out in one file: `get_source` returned real,
+    valid code from the wrong place and called it ok. The index had been built against a
+    different version of the file than the commit it recorded, so the line numbers were
+    counted in a file nobody could see any more.
+
+    A shifted span lands on a neighbouring function and reads perfectly, so there is no
+    way to notice by looking. The only safe answer is to refuse and say the index is the
+    thing that is stale.
+    """
+    repo, store = indexed_fresh
+    from fleetlens.service.source import SourceService
+
+    # Move the file on in both places the reader could look: commit the rewrite, and
+    # re-stamp the build so the recorded commit is the new one.
+    (repo / "app" / "main.py").write_text(REWRITTEN)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "rewrite")
+    new_sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    store.stamp_build({repo.name: new_sha})
+    store.commit()
+
+    out = SourceService(store, store).get_source(_symbol(store))
+    assert out["status"] == "span_mismatch", out
+    assert "source" not in out, "wrong code must not be returned under any status"
+    assert "re-index" in out["hint"]
+
+
+def test_an_index_without_hashes_says_it_could_not_check(indexed_fresh):
+    """Indexes built before per-file hashes still work, and say what they cannot promise."""
+    from fleetlens.store.models import KnowledgeObject
+
+    repo, store = indexed_fresh
+    old = store.get(_symbol(store))
+    payload = {k: v for k, v in old.payload.items() if k != "file_sha"}
+    store.upsert_object(KnowledgeObject(
+        "code_symbol", old.object_id, old.name, None, "unknown", "callgraph",
+        "callgraph", None, None, payload))
+    store.commit()
+
+    from fleetlens.service.source import SourceService
+    out = SourceService(store, store).get_source(_symbol(store))
+    assert out["status"] == "ok"
+    assert out["verified"] is False, "an unverifiable span must not claim to be verified"
+    assert "def get_order" in out["source"]
+
 
 
 # -- bounds ----------------------------------------------------------------------------

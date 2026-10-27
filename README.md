@@ -218,12 +218,14 @@ then reads it. It is scoped to that symbol's span rather than the file, capped, 
 no whole-file mode, because the reason fleetlens gets an agent to an answer in fewer tokens
 is that it stops opening files.
 
-The source is read at the commit the index was built from, not from the working copy. A
-server that rebuilds on a timer moves on between builds, and lines recorded as 42 to 58 may
-hold something else an hour later. Reading history instead means the code always matches the
-span the index reported, and a pinned index returns the code as of that pin. The response
-carries the `commit` it used, and sets `stale` if that commit was gone and it had to fall
-back to disk.
+A line number means nothing without the file it was counted in, so the index records a hash
+of every file it parsed and the tool checks it. It reads the commit the index was built from
+first, falls back to the working copy, and returns whichever one hashes to what was actually
+parsed, saying which in `read_from`. If neither matches, it returns `span_mismatch` and no
+code at all, because a span that has drifted lands on a neighbouring function and reads
+perfectly: there is no way to notice by looking, so returning it would be worse than
+returning nothing. An index built before those hashes existed still works and reports
+`verified: false`.
 
 **Off unless you set that variable, and never offered over stdio**, where the agent can open
 the file itself. Read what you are agreeing to under [Security](#security) before enabling
