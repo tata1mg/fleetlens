@@ -171,8 +171,16 @@ def main(argv: list[str] | None = None) -> int:
     if not args.stdout:
         default_out.unlink(missing_ok=True)
 
+    # Symbols come from tree-sitter and owe the SCIP indexer nothing, so this failing is
+    # the only reason to give up entirely.
     try:
         symbol_index = _symbol_index(repo, context_dir, args.symbols)
+    except RuntimeError as exc:
+        print(f"build-callgraph: {exc}", file=sys.stderr)
+        return 2
+
+    degraded = False
+    try:
         if args.scip:
             scip_path = Path(args.scip)
             if not scip_path.exists():
@@ -193,8 +201,15 @@ def main(argv: list[str] | None = None) -> int:
                               file=sys.stderr)
                     cg = _symbols_only(symbol_index, slug)
     except RuntimeError as exc:
+        # The indexer ran and failed, which is different from it being absent and is
+        # usually an environment problem: a missing virtualenv, a broken toolchain. Losing
+        # the call edges is unavoidable; losing the symbols with them is not, and it used
+        # to happen invisibly because the previous run's file stayed on disk and was
+        # loaded in their place. Write what we do have, and report the failure through the
+        # exit status so the run still says the call graph is unavailable.
         print(f"build-callgraph: {exc}", file=sys.stderr)
-        return 2
+        cg = _symbols_only(symbol_index, slug)
+        degraded = True
 
     payload = json.dumps(cg, indent=2, ensure_ascii=False) + "\n"
     if args.stdout:
@@ -207,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
             s = cg["stats"]
             print(f"build-callgraph: {s['nodes']} nodes, {s['edges']} edges "
                   f"({s['documents']} docs) -> {out}")
-    return 0
+    return 2 if degraded else 0
 
 
 if __name__ == "__main__":

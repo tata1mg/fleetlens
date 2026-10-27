@@ -58,13 +58,18 @@ def test_a_stale_symbol_file_is_not_silently_reused(tmp_path, monkeypatch):
     assert "app/gone.py::a_function_deleted_last_month" in (reused.get("symbols") or {})
 
 
-def test_a_failed_run_leaves_no_call_graph_behind(tmp_path, monkeypatch):
+def test_a_failed_indexer_replaces_stale_spans_with_fresh_ones(tmp_path, monkeypatch):
     """A failure used to leave the previous run's file in place.
 
     `_load_service` loads whatever is in `.context/` without consulting the exit status,
-    so the last successful build's spans would be loaded into a fresh index and attached
-    to today's commit. Leaving nothing is the honest outcome: that repository has no call
-    graph this build, which the run already reports.
+    so the last successful build's spans were loaded into a fresh index and attached to
+    today's commit. On a server where the indexer had been failing for weeks, every symbol
+    served came from a file nobody had rebuilt in that time.
+
+    The call edges genuinely are lost when the indexer fails, but the symbols are not:
+    they come from tree-sitter and owe it nothing. So the stale file is replaced with
+    freshly parsed spans and no edges, and the exit status still reports the failure so
+    the run says the call graph is unavailable.
     """
     from fleetlens.callgraph import cli as cg
 
@@ -81,5 +86,10 @@ def test_a_failed_run_leaves_no_call_graph_behind(tmp_path, monkeypatch):
     monkeypatch.setattr(cg, "_run_indexer", boom)
     rc = cg.main([str(tmp_path), "--language", "python", "--quiet"])
 
-    assert rc == 2
-    assert not stale.exists(), "a failed run must not leave last month's spans readable"
+    assert rc == 2, "the run must still report that the call graph is unavailable"
+
+    written = json.loads(stale.read_text())
+    ids = [n.get("id") for n in written["nodes"]]
+    assert "from-last-month" not in ids, "last month's spans must not survive the failure"
+    assert "app/main.py::f" in ids, "freshly parsed symbols should replace them"
+    assert written["edges"] == [], "no call edges are available when the indexer fails"
