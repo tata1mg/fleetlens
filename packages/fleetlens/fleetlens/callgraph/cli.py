@@ -11,8 +11,10 @@ Run at index time, after `build-symbols`. Exit codes: 0 ok, 2 usage/toolchain er
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -70,6 +72,34 @@ def _repo_venv_bin(repo: Path) -> Optional[str]:
     return None
 
 
+def _uv_pip_shim(venv_bin: str, stack: contextlib.ExitStack) -> Optional[str]:
+    """A directory holding a `pip3` that forwards to `uv pip`, or None if not needed.
+
+    scip-python learns a project's dependencies by shelling out to pip, and it looks for
+    `pip3` then `pip` on PATH. A virtualenv created by `uv venv` contains neither: uv
+    replaces pip with `uv pip` and installs no shim of its own. The result is that a repo
+    `fl doctor` calls ready (it has a `bin/python`) fails every index with "Could not find
+    valid pip command", which is a growing problem rather than a shrinking one as uv
+    spreads.
+
+    Installing pip into someone's virtualenv to fix this would be fleetlens mutating an
+    environment it does not own. Forwarding is cheaper and reversible: scip-python runs
+    exactly two commands, `pip list --format=json` and `pip show -f <pkgs>`, and `uv pip`
+    answers both in the same shapes. VIRTUAL_ENV, set by the caller, is what points uv at
+    the right environment.
+    """
+    if any((Path(venv_bin) / n).exists() for n in ("pip", "pip3")):
+        return None                       # an ordinary virtualenv; nothing to do
+    uv = shutil.which("uv")
+    if uv is None:
+        return None                       # nothing to forward to; scip will say so
+    d = stack.enter_context(tempfile.TemporaryDirectory(prefix="fleetlens-pip-"))
+    shim = Path(d) / "pip3"
+    shim.write_text(f'#!/bin/sh\nexec {shlex.quote(uv)} pip "$@"\n')
+    shim.chmod(0o755)
+    return d
+
+
 class OptionalIndexerMissing(RuntimeError):
     """Raised when a language's SCIP indexer is absent but the language is still usable."""
 
@@ -99,10 +129,15 @@ def _run_indexer(language: str, repo: Path, out: Path, name: str) -> None:
     # fleet with "Could not find valid pip command", before reading a line of source.
     # `fl doctor` already looks for these same four names per repo.
     venv_bin = _repo_venv_bin(repo)
-    if venv_bin:
-        env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
-        env.pop("PYTHONHOME", None)     # would override the venv we just selected
-    proc = subprocess.run(argv, cwd=repo, capture_output=True, text=True, env=env)
+    with contextlib.ExitStack() as stack:
+        if venv_bin:
+            env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+            env.pop("PYTHONHOME", None)     # would override the venv we just selected
+            env["VIRTUAL_ENV"] = str(Path(venv_bin).parent)
+            shim = _uv_pip_shim(venv_bin, stack)
+            if shim:
+                env["PATH"] = f"{shim}{os.pathsep}{env['PATH']}"
+        proc = subprocess.run(argv, cwd=repo, capture_output=True, text=True, env=env)
     if proc.returncode != 0 or not out.exists():
         # These indexers fail with a long Node stack trace. Printing it inline once is
         # merely unhelpful; printing it for every repo in a fleet sweep buries the progress

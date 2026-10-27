@@ -111,6 +111,7 @@ def test_the_repos_own_virtualenv_goes_on_the_indexer_path(tmp_path, monkeypatch
     venv_bin = tmp_path / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
     (venv_bin / "python").touch()
+    (venv_bin / "pip").touch()      # an ordinary virtualenv; uv venvs are covered below
 
     seen = {}
 
@@ -148,3 +149,53 @@ def test_a_repo_with_no_virtualenv_leaves_the_path_alone(tmp_path, monkeypatch):
     cg._run_indexer("python", tmp_path, tmp_path / "out.scip", "svc")
 
     assert seen["env"]["PATH"] == "/usr/bin:/bin"
+
+
+def test_a_uv_virtualenv_gets_a_pip_that_forwards_to_uv(tmp_path, monkeypatch):
+    """`uv venv` installs no pip, and scip-python has no other way to read dependencies.
+
+    A fleet provisioned with uv therefore failed every index with "Could not find valid
+    pip command" while `fl doctor` called each repo ready, because a uv venv does have a
+    `bin/python`. Installing pip into someone's environment to fix that would be fleetlens
+    changing something it does not own, so it forwards instead.
+    """
+    import contextlib
+
+    from fleetlens.callgraph import cli as cg
+
+    (tmp_path / ".venv" / "bin").mkdir(parents=True)
+    (tmp_path / ".venv" / "bin" / "python").touch()        # uv venv: python, no pip
+
+    monkeypatch.setattr(cg.shutil, "which",
+                        lambda t: "/usr/local/bin/uv" if t == "uv" else f"/usr/bin/{t}")
+    with contextlib.ExitStack() as stack:
+        shim_dir = cg._uv_pip_shim(str(tmp_path / ".venv" / "bin"), stack)
+        assert shim_dir, "a uv venv with uv available should get a shim"
+        shim = Path(shim_dir) / "pip3"                      # scip looks for pip3 first
+        assert shim.exists() and os.access(shim, os.X_OK)
+        assert "uv pip" in shim.read_text()
+
+
+def test_an_ordinary_virtualenv_gets_no_shim(tmp_path, monkeypatch):
+    import contextlib
+
+    from fleetlens.callgraph import cli as cg
+
+    vbin = tmp_path / ".venv" / "bin"
+    vbin.mkdir(parents=True)
+    (vbin / "pip").touch()
+    monkeypatch.setattr(cg.shutil, "which", lambda t: f"/usr/bin/{t}")
+    with contextlib.ExitStack() as stack:
+        assert cg._uv_pip_shim(str(vbin), stack) is None
+
+
+def test_no_uv_means_no_shim_rather_than_a_broken_one(tmp_path, monkeypatch):
+    import contextlib
+
+    from fleetlens.callgraph import cli as cg
+
+    vbin = tmp_path / ".venv" / "bin"
+    vbin.mkdir(parents=True)
+    monkeypatch.setattr(cg.shutil, "which", lambda t: None if t == "uv" else f"/usr/bin/{t}")
+    with contextlib.ExitStack() as stack:
+        assert cg._uv_pip_shim(str(vbin), stack) is None

@@ -143,7 +143,22 @@ def check_repo(rep: Report, repo: Path) -> None:
         venvs = [d for d in ("venv", ".venv", "env", ".env")
                  if (repo / d / "bin" / "python").exists() or (repo / d / "Scripts").exists()]
         if venvs:
-            rep.add("repo virtualenv", OK, f"found {venvs[0]}/")
+            # A virtualenv is necessary and, since uv, no longer sufficient. scip-python
+            # discovers dependencies by shelling out to pip, and `uv venv` installs none,
+            # so a repo that looks ready here failed every index with "Could not find
+            # valid pip command". fleetlens forwards to `uv pip` when uv is installed; if
+            # it is not, this is the only place that will say why.
+            vbin = repo / venvs[0] / "bin"
+            has_pip = any((vbin / n).exists() for n in ("pip", "pip3")) or \
+                any((repo / venvs[0] / "Scripts" / n).exists() for n in ("pip.exe", "pip3.exe"))
+            if has_pip or shutil.which("uv"):
+                rep.add("repo virtualenv", OK, f"found {venvs[0]}/")
+            else:
+                rep.add("repo virtualenv", WARN,
+                        f"found {venvs[0]}/, but it has no pip and uv is not installed",
+                        "scip-python reads the dependency list through pip and will fail. "
+                        "Install uv, or add pip to the virtualenv "
+                        f"(`{venvs[0]}/bin/python -m ensurepip`)")
         else:
             rep.add("repo virtualenv", WARN,
                     "none found; scip-python cannot resolve imports and will fail",
