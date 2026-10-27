@@ -186,14 +186,26 @@ class SourceService:
         if truncated:
             hi = lo + cap - 1
 
-        return {"status": "ok", "id": symbol_id, "path": in_repo,
-                "line_start": lo, "line_end": hi,
-                "lang": p.get("lang"), "qualname": p.get("qualname"),
-                "read_from": read_from,
-                "commit": sha if read_from == "commit" else None,
-                # True only when the bytes read hash to what the indexer parsed. False
-                # means the index predates per-file hashes and the span is unverifiable,
-                # which is a weaker claim than it looks and is said rather than implied.
-                "verified": bool(want) and verified,
-                "truncated": truncated,
-                "source": "\n".join(lines[lo - 1:hi])}
+        out: dict[str, Any] = {"status": "ok", "id": symbol_id, "path": in_repo,
+                               "line_start": lo, "line_end": hi}
+        if want and verified:
+            pass
+        else:
+            # An index from before per-file hashes. The lines may be right and there is no
+            # way to tell, so say it in words as well as in a flag: a reader skimming for
+            # `status` would otherwise take this for a checked answer.
+            out["warning"] = ("this index records no file hash, so the span could not be "
+                              "checked against the file it was measured in; re-index to "
+                              "make this verifiable")
+        out.update({
+            "lang": p.get("lang"), "qualname": p.get("qualname"),
+            "read_from": read_from,
+            "commit": sha if read_from == "commit" else None,
+            # True only when the bytes read hash to what the indexer parsed. False means
+            # the index predates per-file hashes and the span is unverifiable, which is a
+            # weaker claim than it looks and is said rather than implied.
+            "verified": bool(want) and verified,
+            "truncated": truncated,
+            "source": "\n".join(lines[lo - 1:hi]),
+        })
+        return out
