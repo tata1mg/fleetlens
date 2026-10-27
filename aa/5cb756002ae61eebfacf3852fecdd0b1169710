@@ -1,0 +1,43 @@
+packages/fleetlens/fleetlens/server/tools/__init__.py
+  s_d5ea2fae8a9c21::t_0204511d057848 2,7,10-13
+packages/fleetlens/fleetlens/server/routing.py
+  s_d5ea2fae8a9c21::t_8a8bd03258ce22 153-158
+packages/fleetlens/fleetlens/server/app.py
+  s_d5ea2fae8a9c21::t_1230dd7eb658ac 9,19,35
+packages/fleetlens/tests/test_source.py
+  s_d5ea2fae8a9c21::t_8639ab51aa25a1 1-13,16-50,59-68,76,82-83,88-139,141,143-149,151-157,159-223,225-228,230-235
+  s_d5ea2fae8a9c21::t_fb558060eda5c8 51,54-56,58,69-75,77-81,150,158,224,229
+  s_d5ea2fae8a9c21::t_a741335a41d08c 84-87
+  s_d5ea2fae8a9c21::t_3e99327578141a 140,142
+  s_d5ea2fae8a9c21::t_e39936698064f7 14-15
+  s_d5ea2fae8a9c21::t_4e807d5cc153fe 52-53,57
+packages/fleetlens/fleetlens/server/tools/source.py
+  s_d5ea2fae8a9c21::t_1103a51e1947f0 1-47,52-58
+  s_d5ea2fae8a9c21::t_abdbac99677da9 48-51
+SECURITY.md
+  s_d5ea2fae8a9c21::t_98bca6e06823ea 39-56
+packages/fleetlens/fleetlens/cli.py
+  s_d5ea2fae8a9c21::t_8a8bd03258ce22 567
+README.md
+  s_d5ea2fae8a9c21::t_ca610b8c410625 193-231
+  s_d5ea2fae8a9c21::t_caab953f250108 492-522
+  s_d5ea2fae8a9c21::t_9d696a5bf526cf 149
+packages/fleetlens/fleetlens/service/source.py
+  s_d5ea2fae8a9c21::t_2188216679052c 1-144
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa5cb756002ae61eebfacf3852fecdd0b1169710",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
