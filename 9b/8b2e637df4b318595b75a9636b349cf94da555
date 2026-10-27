@@ -1,0 +1,21 @@
+packages/fleetlens/fleetlens/callgraph/cli.py
+  s_d5ea2fae8a9c21::t_c8fffeea2a77f4 59-72,95-104
+packages/fleetlens/tests/test_callgraph_cli.py
+  s_d5ea2fae8a9c21::t_17c07b4974f30f 5-6,98-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b8b2e637df4b318595b75a9636b349cf94da555",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
