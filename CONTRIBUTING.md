@@ -113,6 +113,9 @@ can settle the cases you decline.
   `source="llm"` and a confidence.
 - No network calls in the deterministic core.
 - Comments explain *why*, not *what*. Most code needs none.
+- `docs/tools.md` is generated. Change a tool's signature or docstring and regenerate it
+  with `python -m fleetlens.server.toolsdoc > docs/tools.md`, or CI will fail. A tool
+  registered behind a new condition also needs an entry in `toolsdoc.AVAILABILITY`.
 
 ## Pull requests
 
