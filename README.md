@@ -148,6 +148,10 @@ fl export-graph --db fleetlens.db -o mesh.html   # self-contained HTML render, n
 | `discover_services` / `discover_interfaces` / `discover_libraries` | Natural-language search *(opt-in, needs embeddings)* |
 | `get_source` | The code behind a symbol *(off by default, HTTP only, see below)* |
 
+Parameters, defaults and the conditions under which each tool is registered are in
+[docs/tools.md](docs/tools.md), generated from the server's own registrations. Four of the
+fifteen are conditional, so a default `fl serve` advertises ten.
+
 ---
 
 ## What you get
