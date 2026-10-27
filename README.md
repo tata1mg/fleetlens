@@ -146,6 +146,7 @@ fl export-graph --db fleetlens.db -o mesh.html   # self-contained HTML render, n
 | `get_engineering_guidance` | The team's own written standards for writing code here |
 | `get_index_info` | Which build answered this, and what commit each repo was at |
 | `discover_services` / `discover_interfaces` / `discover_libraries` | Natural-language search *(opt-in, needs embeddings)* |
+| `get_source` | The code behind a symbol *(off by default, HTTP only, see below)* |
 
 ---
 
@@ -188,6 +189,45 @@ at, through `get_index_info`, so a measurement stays attributable after the pin 
 `fl export-graph` writes the whole dependency graph to a self-contained HTML file. Nothing to
 install and nothing to run for whoever opens it, which is usually the point when the audience
 is a review or an architecture discussion rather than an agent.
+
+### The code behind a symbol, if you turn it on
+
+Every answer here carries a `file:line`, which is enough when the repository is on your
+machine and nothing at all when it is not. On a shared server it usually is not: the index
+holds the whole fleet and your laptop holds a handful of checkouts.
+
+`get_source` closes that, for the questions structure cannot answer. What does this handler
+validate, in what order does it call its dependencies, which branch returns the error you
+are chasing.
+
+```bash
+FLEETLENS_EXPOSE_SOURCE=1 fl serve --http --host 0.0.0.0
+```
+
+```
+get_source("code_symbol:orders:app/main.py::get_order")
+-> @app.get("/orders/{order_id}")
+   def get_order(order_id: str):
+       if not order_id.isdigit():
+           raise ValueError("order_id must be numeric")
+       ...
+```
+
+It takes the symbol ids the other tools already return, so an agent locates a symbol and
+then reads it. It is scoped to that symbol's span rather than the file, capped, and there is
+no whole-file mode, because the reason fleetlens gets an agent to an answer in fewer tokens
+is that it stops opening files.
+
+The source is read at the commit the index was built from, not from the working copy. A
+server that rebuilds on a timer moves on between builds, and lines recorded as 42 to 58 may
+hold something else an hour later. Reading history instead means the code always matches the
+span the index reported, and a pinned index returns the code as of that pin. The response
+carries the `commit` it used, and sets `stale` if that commit was gone and it had to fall
+back to disk.
+
+**Off unless you set that variable, and never offered over stdio**, where the agent can open
+the file itself. Read what you are agreeing to under [Security](#security) before enabling
+it on a shared server.
 
 ### Your team's standards, not just the ones it inferred
 
@@ -449,8 +489,37 @@ with Ollama they stay on your hardware. With `--provider openai` they do not: pr
 endpoint paths, handler names and docstrings.
 
 `fl serve --http` is protected by one shared bearer token and offers no TLS, no per-user
-identity and no rotation without a restart. Run it on a private network. More in
-[SECURITY.md](SECURITY.md).
+identity and no rotation without a restart. Run it on a private network.
+
+### What `FLEETLENS_EXPOSE_SOURCE` costs you
+
+Worth being blunt about, because it changes what the server is rather than adding to it.
+
+Without it, a leaked token exposes the shape of your systems: service names, endpoint paths,
+queue names, symbol names and file paths. With it, a leaked token exposes **the source of
+every repository in the index**. One variable moves the server from publishing a map to
+publishing the code.
+
+Weigh that against the properties above. A single token shared by a team, no TLS, no way to
+tell who made a request and no way to revoke one person without rotating for everyone are
+defensible for a metadata service on a trusted network. They are a different proposition for
+a code-read API, and the server does not become more careful because you set the variable.
+
+Two things limit the blast radius, and it is worth knowing exactly how far they go:
+
+- **Only indexed symbols are readable.** There is no path argument, so nothing outside the
+  index can be reached, and files excluded by `.fleetlensignore` or by the always-excluded
+  patterns were never indexed in the first place. The protection is that the span does not
+  exist, not that a check rejects it.
+- **Exclusions are name-based.** A credential sitting inside an ordinary source file is
+  readable, exactly as it is to anyone who can clone the repository.
+
+So the question to ask is not whether fleetlens leaks source. It is whether everyone holding
+the shared token should be able to read every repository in the index. Where that is already
+true, such as a team whose members can clone all of them anyway, this changes little. Where
+it is not, leave it off.
+
+More in [SECURITY.md](SECURITY.md).
 
 ## Contributing
 
