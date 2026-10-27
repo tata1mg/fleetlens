@@ -16,7 +16,7 @@ live at **https://github.com/tata1mg/fleetlens**.
 fleetlens is not on PyPI yet, so install from git and pin a tag:
 
 ```bash
-pip install "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
+pip install "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.3.0#subdirectory=packages/fleetlens"
 ```
 
 The base install is enough to manage pinned indexes on a remote server; `[all]` adds the

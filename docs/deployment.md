@@ -95,7 +95,7 @@ cannot update:
 ```bash
 sudo -u "$FLEETLENS_USER" python3 -m venv "$FLEETLENS_HOME/venv"
 sudo -u "$FLEETLENS_USER" "$FLEETLENS_HOME/venv/bin/pip" install \
-  "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
+  "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.3.0#subdirectory=packages/fleetlens"
 ```
 
 fleetlens is not on PyPI, so the install is from git. Pin the tag rather than tracking
