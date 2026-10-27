@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fleetlens"
-version = "0.2.0"
+version = "0.3.0"
 description = "The cross-repo context your coding agent cannot grep for: a service graph for microservices, derived from source and served over MCP."
 requires-python = ">=3.10"
 keywords = ["microservices", "mcp", "call-graph", "static-analysis", "code-intelligence", "ai-agents"]

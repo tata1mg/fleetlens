@@ -116,7 +116,7 @@ If you do install the CLI, the base install is enough. The pin commands need non
 indexing toolchain, so no extras:
 
 ```bash
-pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git@v0.2.0#subdirectory=packages/fleetlens"
+pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git@v0.3.0#subdirectory=packages/fleetlens"
 ```
 
 ## Recording what you measured against

@@ -1,5 +1,114 @@
 # Changelog
 
+## 0.3.0
+
+Read the source behind an indexed symbol, when the operator allows it.
+
+Every other tool here answers from the index and hands back a `file:line`. That is enough
+when the agent is sitting on the repository and useless when it is not, which is the normal
+case for every repository but the one being worked in. `get_source` returns the lines
+themselves, so "what does this handler validate", "which branch returns that error" and
+"what does this caller actually send" can be answered without cloning anything.
+
+### `get_source`
+
+```bash
+FLEETLENS_EXPOSE_SOURCE=1 fl serve --http --host 0.0.0.0
+```
+
+Off unless an operator turns it on, and not offered over stdio at all. Over stdio the agent
+is already on the machine holding the repositories and can open the file itself, so the tool
+would add a lookup and no capability. Absent rather than registered and refusing, because an
+advertised tool that always fails costs an agent a turn and teaches it to stop trusting the
+server.
+
+It takes the `code_symbol:...` ids that `find_symbol`, `get_callers`, `get_callees` and
+`get_endpoint_call_graph` already return, so the usual path is to locate a symbol with the
+existing tools and read it with this one.
+
+Scoped to the symbol's own span. `context_lines` widens it by up to 50 lines either side,
+for a decorator or a signature sitting just outside. At most 500 lines come back in one
+response and `truncated` says when that bit. There is no whole-file mode: the point of
+fleetlens is that an agent stops opening files, and a tool that hands back a thousand lines
+invites it straight back.
+
+Paths excluded from indexing are unreachable through it. Not by a second filter, but because
+a symbol that was never indexed has no id to ask for.
+
+### Spans you can trust
+
+A span is a pair of line numbers, and line numbers mean nothing without the file they were
+counted in. Returning whatever occupies lines 42 to 58 today would be confidently wrong in
+the one way this project exists to avoid: indistinguishable from a fact, because shifted
+lines usually land on real code that reads perfectly.
+
+So every symbol now records a hash of the file it was parsed from. `get_source` reads at the
+commit the index was built from, falls back to the working copy, and returns whichever one
+matches that hash, saying which in `read_from`. A pinned index reads at the pin's commit.
+When neither matches you get `span_mismatch` and no source, which says the index is stale
+for that file rather than guessing at an offset.
+
+### Also
+
+- **`fl serve` refuses a `--db` that does not exist** instead of creating it. Only `--http`
+  opened the store read-only, so a mistyped or wrongly-resolved path made stdio create an
+  empty database and then answer every question with zero services, with no error anywhere.
+  An MCP client picks its own working directory, so a relative path that was right in the
+  shell is routinely wrong there.
+- **`build-callgraph` no longer reuses `.context/_symbols.json` on sight.** Nothing writes
+  that file during a normal index, so it only appeared when someone had run `fl-symbols` by
+  hand, and from then on every index of that repo reported spans frozen at that moment while
+  recording the current commit beside them. Reuse is now `--symbols`, and the caller owns it.
+- **A failed SCIP indexer degrades to symbols only and exits 2.** The output is cleared
+  before the attempt, so a failure leaves no call graph rather than the last successful one.
+  Loaders read `.context/` without consulting exit status, so a stale file there became
+  spans in a fresh index, attached to today's commit.
+- **`scip-typescript` is optional**, which is what `fl doctor` always reported. A missing
+  indexer now costs the call edges and keeps routes, outbound calls and messaging.
+- **The repo's own virtualenv goes on the SCIP indexer's PATH.** `scip-python` resolves
+  dependencies by shelling out to `pip`, and without this it resolves against whichever
+  environment comes first, or fails outright where there is no `pip` at all.
+- **`fl --version`**.
+- **`callgraph` and `all` refer to the other extras** rather than repeating their pins, so
+  adding a dependency to one cannot leave the others behind.
+
+### Upgrading
+
+An index built before 0.3.0 carries no file hashes. `get_source` still answers from it, with
+`verified: false` and a warning saying the span could not be checked against the file it was
+measured in. Re-index to make spans verifiable. Nothing else requires a re-index, and the
+store schema is unchanged at version 1.
+
+### Measured
+
+Verification is free and reading from history is not. On one developer machine, against a
+10 KB file, the `sha1` comparison that decides whether a span is trustworthy takes 7
+microseconds, while the `git show` that fetches the bytes takes 48 ms at the median and 63 ms
+at p95. Essentially all of that is process spawn, so it scales with the number of calls
+rather than with file size, against a tool latency budget of 3 to 100 ms.
+
+The drift this guards against is not theoretical. In one repository carrying a
+`_symbols.json` left from an earlier manual run, 15% of 4,110 spans no longer matched the
+file they had been measured in. Before this release those spans would have been served as
+source with nothing to indicate a problem.
+
+### Known limits
+
+- **One variable moves the server from publishing a map to publishing the code.** Without
+  `get_source` a leaked token exposes service names, endpoint paths, queue names, symbol
+  names and file paths. With it, a leaked token exposes the source of every repository in
+  the index. A single shared token, no TLS and no per-user identity are defensible for a
+  metadata service on a trusted network and are a different proposition for a code-read API.
+- **No audit trail.** There is no record of which symbols were read or by whom, because
+  there is no per-user identity to attribute a read to.
+- **All or nothing.** The variable cannot be scoped to some repositories and not others.
+- **The checkouts have to be on the serving machine.** An index outlives the repositories it
+  was built from, and `get_source` returns `unavailable` when the checkout is gone.
+- **A force-pushed or garbage-collected commit** falls back to the working copy, which is
+  reported in `read_from` and may not verify.
+- **`span_mismatch` returns nothing at all.** That is deliberate, but it means a stale index
+  degrades a question into a re-index rather than into a partial answer.
+
 ## 0.2.0
 
 Pin an index, so an agent evaluation can be reproduced.
