@@ -5,6 +5,7 @@ what it returns must match the index that pointed at it. The rest is bounds.
 """
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from fleetlens import indexing
 from fleetlens.server.app import build_context
 from fleetlens.server.tools import register_all
 from fleetlens.server.tools import source as source_tool
+from fleetlens.store.models import KnowledgeObject
 from fleetlens.store.sqlite import SqliteStore
 
 ORIGINAL = """\
@@ -49,11 +51,15 @@ def _git(repo: Path, *args: str) -> None:
 
 
 def _build(base: Path):
-    """A one-repo fleet, committed and indexed, with the store still open.
+    """A committed repo plus the store rows an index of it would hold.
 
-    The real indexer runs rather than a stub, because symbols are what this feature reads
-    and they come from the call-graph step. scip-python fails on a fixture with no
-    virtualenv, which is fine: the tree-sitter symbol index still produces the spans.
+    The rows are written directly rather than by running the indexer. Symbols reach the
+    store through the call-graph step, which needs a SCIP binary, and a suite that silently
+    tests less on a machine without one is worse than a slow suite. Writing them here keeps
+    every run identical and hermetic.
+
+    `test_the_indexer_still_produces_what_this_reads` holds these shapes to the real
+    loader, so this fixture cannot drift from it unnoticed.
     """
     repo = base / "orders"
     (repo / "app").mkdir(parents=True)
@@ -61,16 +67,26 @@ def _build(base: Path):
     _git(repo, "init", "-q")
     _git(repo, "add", "-A")
     _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+    sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                         capture_output=True, text=True, check=True).stdout.strip()
 
     store = SqliteStore(":memory:")
-    indexing.index_repo(repo, store, slug="orders")
+    store.upsert_object(KnowledgeObject(
+        "service", "orders", "orders", None, "unknown", "static", "index", None, None,
+        {"root": str(repo), "symbol_count": 1}))
+    store.upsert_object(KnowledgeObject(
+        "code_symbol", "orders:app/main.py::get_order", "get_order", None, "unknown",
+        "callgraph", "callgraph", None, None,
+        {"path": "app/main.py", "qualname": "get_order", "kind": "function",
+         "lang": "python", "line_start": 6, "line_end": 9}))
+    store.stamp_build({repo.name: sha})
     store.commit()
     return repo, store
 
 
 @pytest.fixture(scope="module")
 def indexed(tmp_path_factory):
-    """Shared by the tests that only read. Indexing is seconds, so it happens once."""
+    """Shared by the tests that only read."""
     return _build(tmp_path_factory.mktemp("shared"))
 
 
@@ -233,3 +249,40 @@ def test_a_missing_checkout_explains_itself(indexed_fresh):
     out = SourceService(store, store).get_source(sym)
     assert out["status"] == "unavailable"
     assert "not on this machine" in out["reason"]
+
+
+@pytest.mark.skipif(shutil.which("scip-python") is None,
+                    reason="needs the SCIP toolchain; CI installs no npm packages")
+def test_the_indexer_still_produces_what_this_reads(tmp_path):
+    """The fixture above writes symbol rows by hand. This holds those shapes to reality.
+
+    If the loader ever stops recording a path or a line span, or renames one, every other
+    test here would keep passing against a payload the product no longer produces. This is
+    the one test that would fail instead.
+    """
+    repo = tmp_path / "orders"
+    (repo / "app").mkdir(parents=True)
+    (repo / "app" / "main.py").write_text(ORIGINAL)
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+
+    store = SqliteStore(":memory:")
+    indexing.index_repo(repo, store, slug="orders")
+    store.commit()
+
+    syms = [o for o in store.list_objects("code_symbol") if "get_order" in o.id]
+    assert syms, "the indexer produced no symbol for get_order"
+    payload = syms[0].payload
+    assert payload["path"] == "app/main.py"
+    assert isinstance(payload["line_start"], int)
+    assert isinstance(payload["line_end"], int)
+
+    svc = store.get("service:orders")
+    assert svc is not None and svc.payload.get("root"), "a service must record its root"
+    assert store.repo_shas().get(repo.name), "the build must record a commit per checkout"
+
+    # And the whole thing works against a genuinely indexed store, not just a built one.
+    from fleetlens.service.source import SourceService
+    out = SourceService(store, store).get_source(syms[0].id)
+    assert out["status"] == "ok" and "def get_order" in out["source"], out
