@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from .extractor import build_callgraph, load_symbol_index
 
@@ -55,6 +56,20 @@ _INDEXERS = {
 }
 
 
+def _repo_venv_bin(repo: Path) -> Optional[str]:
+    """The repo's own virtualenv bin directory, if it has one.
+
+    Same four names `fl doctor` reports on, so a repo the doctor calls ready is a repo the
+    indexer can actually use.
+    """
+    for name in ("venv", ".venv", "env", ".env"):
+        for sub in ("bin", "Scripts"):
+            d = repo / name / sub
+            if d.is_dir():
+                return str(d)
+    return None
+
+
 class OptionalIndexerMissing(RuntimeError):
     """Raised when a language's SCIP indexer is absent but the language is still usable."""
 
@@ -77,6 +92,17 @@ def _run_indexer(language: str, repo: Path, out: Path, name: str) -> None:
     # scip-python JSON.parses `pip list` from the target repo's venv; pip's "new release
     # available" notice lands in that output and breaks the parse.
     env = {**os.environ, "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
+    # ...and it finds that pip on PATH, so the repo's own virtualenv has to be on it.
+    # Without this the indexer resolves against whichever environment happens to be first,
+    # which is the wrong set of dependencies, or dies outright where there is no `pip` at
+    # all: a sweep run with a deliberately minimal PATH failed on every repository in a
+    # fleet with "Could not find valid pip command", before reading a line of source.
+    # `fl doctor` already looks for these same four names per repo.
+    venv_bin = _repo_venv_bin(repo)
+    if venv_bin:
+        env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("PYTHONHOME", None)     # would override the venv we just selected
+        env["VIRTUAL_ENV"] = str(Path(venv_bin).parent)
     proc = subprocess.run(argv, cwd=repo, capture_output=True, text=True, env=env)
     if proc.returncode != 0 or not out.exists():
         # These indexers fail with a long Node stack trace. Printing it inline once is
@@ -108,16 +134,25 @@ def _symbols_only(symbol_index: dict, slug: str) -> dict:
                       "qualname": sid.rsplit("::", 1)[-1],
                       "kind": sym.get("kind", "function"), "lang": sym.get("lang", ""),
                       "line_start": sym.get("line_start", 0),
-                      "line_end": sym.get("line_end", 0)})
+                      "line_end": sym.get("line_end", 0),
+                      "file_sha": sym.get("file_sha", "")})
     return {"schema": "callgraph/v1", "slug": slug, "nodes": nodes, "edges": [],
             "stats": {"nodes": len(nodes), "edges": 0, "documents": 0,
                       "note": "no SCIP indexer for this language; symbols only"}}
 
 
-def _symbol_index(repo: Path, context_dir: Path) -> dict:
-    existing = context_dir / "_symbols.json"
-    if existing.exists():
-        return load_symbol_index(existing)
+def _symbol_index(repo: Path, context_dir: Path, precomputed: Optional[str] = None) -> dict:
+    """Spans for this repo, parsed now unless the caller names a file to reuse.
+
+    This used to reuse `.context/_symbols.json` whenever it happened to exist, with no
+    check that it still described the working tree. Nothing writes that file during a
+    normal index, so it only appears when someone has run `fl-symbols` by hand, and from
+    then on every index of that repo silently reported spans frozen at the moment they did.
+    The index kept recording the current commit beside them, so the drift was invisible and
+    grew. Reuse is now something a caller asks for and owns.
+    """
+    if precomputed:
+        return load_symbol_index(Path(precomputed))
     # Build inline so the call graph is usable standalone (needs the `symbols` extra).
     try:
         from ..symbols.indexer import build_index
@@ -140,6 +175,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-o", "--output", default=None,
                     help="output path (default: <repo>/.context/callgraph.json)")
     ap.add_argument("--stdout", action="store_true", help="write to stdout instead")
+    ap.add_argument("--symbols", default=None,
+                    help="reuse a prebuilt symbol index instead of parsing the repo; "
+                         "only correct if it describes the current working tree")
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -150,8 +188,24 @@ def main(argv: list[str] | None = None) -> int:
     slug = args.slug or repo.name
     context_dir = repo / ".context"
 
+    # Any run that gets this far owns the output. Clearing it first means a failure leaves
+    # no call graph rather than the last successful one: `_load_service` loads whatever is
+    # in `.context/` without consulting the exit status, so a stale file here becomes spans
+    # in a fresh index, attached to today's commit.
+    default_out = Path(args.output) if args.output else context_dir / "callgraph.json"
+    if not args.stdout:
+        default_out.unlink(missing_ok=True)
+
+    # Symbols come from tree-sitter and owe the SCIP indexer nothing, so this failing is
+    # the only reason to give up entirely.
     try:
-        symbol_index = _symbol_index(repo, context_dir)
+        symbol_index = _symbol_index(repo, context_dir, args.symbols)
+    except RuntimeError as exc:
+        print(f"build-callgraph: {exc}", file=sys.stderr)
+        return 2
+
+    degraded = False
+    try:
         if args.scip:
             scip_path = Path(args.scip)
             if not scip_path.exists():
@@ -172,21 +226,28 @@ def main(argv: list[str] | None = None) -> int:
                               file=sys.stderr)
                     cg = _symbols_only(symbol_index, slug)
     except RuntimeError as exc:
+        # The indexer ran and failed, which is different from it being absent and is
+        # usually an environment problem: a missing virtualenv, a broken toolchain. Losing
+        # the call edges is unavoidable; losing the symbols with them is not, and it used
+        # to happen invisibly because the previous run's file stayed on disk and was
+        # loaded in their place. Write what we do have, and report the failure through the
+        # exit status so the run still says the call graph is unavailable.
         print(f"build-callgraph: {exc}", file=sys.stderr)
-        return 2
+        cg = _symbols_only(symbol_index, slug)
+        degraded = True
 
     payload = json.dumps(cg, indent=2, ensure_ascii=False) + "\n"
     if args.stdout:
         sys.stdout.write(payload)
     else:
-        out = Path(args.output) if args.output else context_dir / "callgraph.json"
+        out = default_out
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(payload, encoding="utf-8")
         if not args.quiet:
             s = cg["stats"]
             print(f"build-callgraph: {s['nodes']} nodes, {s['edges']} edges "
                   f"({s['documents']} docs) -> {out}")
-    return 0
+    return 2 if degraded else 0
 
 
 if __name__ == "__main__":

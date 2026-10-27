@@ -137,6 +137,7 @@ def build_callgraph(scip_path: Path, symbol_index: dict, slug: str) -> dict:
             "lang": s["lang"],
             "line_start": s["line_start"],
             "line_end": s["line_end"],
+            "file_sha": s.get("file_sha", ""),
         }
         for sid, s in sorted(symbols.items())
     ]

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from ..service.callgraph import CallGraphService
 from ..service.discovery import DiscoveryService
 from ..service.relationships import RelationshipService
+from ..service.source import SourceService
 from ..store.sqlite import SqliteStore
 
 
@@ -15,6 +16,7 @@ class ServiceContext:
     callgraph: CallGraphService
     relationships: RelationshipService
     discovery: DiscoveryService
+    source: SourceService
 
     def close(self) -> None:
         self.store.close()
@@ -30,4 +32,5 @@ def build_context(db_path: str, embedder=None, read_only: bool = False) -> Servi
         callgraph=CallGraphService(store, store),
         relationships=RelationshipService(store, store),
         discovery=DiscoveryService(store, store, embedder),
+        source=SourceService(store, store),
     )

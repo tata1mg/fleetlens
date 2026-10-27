@@ -150,6 +150,12 @@ class RoutingContext:
     def discovery(self):
         return self._ctx().discovery
 
+    @property
+    def source(self):
+        # Resolved per request like the rest, which is what makes a pinned request read
+        # source at the pin's commit rather than the live index's.
+        return self._ctx().source
+
     def close(self) -> None:
         self._registry.live.close()
 

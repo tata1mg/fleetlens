@@ -36,6 +36,24 @@ for a trusted network rather than for the open internet. Know these before you e
 * **`--insecure` turns authentication off entirely**, including for the pin endpoints. It
   is for a local socket, not a shared host. The server logs a warning when it is used.
 
+### Serving source
+
+`FLEETLENS_EXPOSE_SOURCE=1` adds a `get_source` tool that returns the code behind an indexed
+symbol. It is off unless set, and is never offered over stdio.
+
+Enabling it changes what a leaked token costs. Without it, an attacker learns the structure
+of your systems. With it, they can read the source of every repository in the index, through
+the same single shared token described above, over the same connection with no TLS.
+
+The tool takes a symbol id rather than a path, so only spans that were indexed can be read.
+Files matching the patterns below, or a repository's `.fleetlensignore`, are never indexed
+and therefore cannot be returned. That containment is structural rather than a filter: the
+span does not exist. It does not extend to a secret written inside an ordinary source file,
+which is readable to anyone who can clone the repository and is readable here too.
+
+Source is read with `git show` at the commit the index was built from, so what comes back
+matches the span the index recorded rather than whatever the working copy holds now.
+
 ## Config and secrets
 
 fleetlens reads configuration files to work out which services address which. That includes

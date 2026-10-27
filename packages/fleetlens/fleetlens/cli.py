@@ -564,7 +564,7 @@ def _cmd_serve(args) -> int:
         "boundaries, and a confident guess about a service boundary is indistinguishable "
         "from a fact. Every answer here carries evidence and a confidence label."
         + _guidance_instructions(ctx)))
-    register_all(mcp, ctx)
+    register_all(mcp, ctx, http=args.http)
 
     if args.http:
         import logging
