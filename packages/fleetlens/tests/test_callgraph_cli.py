@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -93,3 +95,56 @@ def test_a_failed_indexer_replaces_stale_spans_with_fresh_ones(tmp_path, monkeyp
     assert "from-last-month" not in ids, "last month's spans must not survive the failure"
     assert "app/main.py::f" in ids, "freshly parsed symbols should replace them"
     assert written["edges"] == [], "no call edges are available when the indexer fails"
+
+
+def test_the_repos_own_virtualenv_goes_on_the_indexer_path(tmp_path, monkeypatch):
+    """scip-python runs `pip list` to see what the project depends on, and finds that pip
+    on PATH. A fleet sweep with a tightly scoped PATH therefore failed on every repository
+    with "Could not find valid pip command", before reading a line of source, while
+    `fl doctor` reported the toolchain healthy because the binary existed.
+
+    The repo's own virtualenv is both the pip it needs and the right one: resolving
+    against whatever environment happens to be first on PATH gives the wrong dependencies.
+    """
+    from fleetlens.callgraph import cli as cg
+
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    (venv_bin / "python").touch()
+
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["env"] = kw.get("env") or {}
+        class R:
+            returncode = 0
+        (Path(argv[argv.index("--output") + 1])).write_text("{}")
+        return R()
+
+    monkeypatch.setattr(cg.shutil, "which", lambda t: f"/usr/bin/{t}")
+    monkeypatch.setattr(cg.subprocess, "run", fake_run)
+    cg._run_indexer("python", tmp_path, tmp_path / "out.scip", "svc")
+
+    path = seen["env"].get("PATH", "")
+    assert path.split(os.pathsep)[0] == str(venv_bin), path
+    assert "PYTHONHOME" not in seen["env"]
+
+
+def test_a_repo_with_no_virtualenv_leaves_the_path_alone(tmp_path, monkeypatch):
+    from fleetlens.callgraph import cli as cg
+
+    seen = {}
+
+    def fake_run(argv, **kw):
+        seen["env"] = kw.get("env") or {}
+        class R:
+            returncode = 0
+        (Path(argv[argv.index("--output") + 1])).write_text("{}")
+        return R()
+
+    monkeypatch.setattr(cg.shutil, "which", lambda t: f"/usr/bin/{t}")
+    monkeypatch.setattr(cg.subprocess, "run", fake_run)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    cg._run_indexer("python", tmp_path, tmp_path / "out.scip", "svc")
+
+    assert seen["env"]["PATH"] == "/usr/bin:/bin"

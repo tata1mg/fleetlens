@@ -56,6 +56,20 @@ _INDEXERS = {
 }
 
 
+def _repo_venv_bin(repo: Path) -> Optional[str]:
+    """The repo's own virtualenv bin directory, if it has one.
+
+    Same four names `fl doctor` reports on, so a repo the doctor calls ready is a repo the
+    indexer can actually use.
+    """
+    for name in ("venv", ".venv", "env", ".env"):
+        for sub in ("bin", "Scripts"):
+            d = repo / name / sub
+            if d.is_dir():
+                return str(d)
+    return None
+
+
 class OptionalIndexerMissing(RuntimeError):
     """Raised when a language's SCIP indexer is absent but the language is still usable."""
 
@@ -78,6 +92,16 @@ def _run_indexer(language: str, repo: Path, out: Path, name: str) -> None:
     # scip-python JSON.parses `pip list` from the target repo's venv; pip's "new release
     # available" notice lands in that output and breaks the parse.
     env = {**os.environ, "PIP_DISABLE_PIP_VERSION_CHECK": "1"}
+    # ...and it finds that pip on PATH, so the repo's own virtualenv has to be on it.
+    # Without this the indexer resolves against whichever environment happens to be first,
+    # which is the wrong set of dependencies, or dies outright where there is no `pip` at
+    # all: a sweep run with a deliberately minimal PATH failed on every repository in a
+    # fleet with "Could not find valid pip command", before reading a line of source.
+    # `fl doctor` already looks for these same four names per repo.
+    venv_bin = _repo_venv_bin(repo)
+    if venv_bin:
+        env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
+        env.pop("PYTHONHOME", None)     # would override the venv we just selected
     proc = subprocess.run(argv, cwd=repo, capture_output=True, text=True, env=env)
     if proc.returncode != 0 or not out.exists():
         # These indexers fail with a long Node stack trace. Printing it inline once is
