@@ -1,0 +1,24 @@
+docs/_config.yml
+  s_d5ea2fae8a9c21::t_34f40cc141ba20 1-5,8,10,12-17
+  s_d5ea2fae8a9c21::t_c16c7cfb66ec71 6-7,9,11
+docs/index.md
+  s_d5ea2fae8a9c21::t_9b4232ae2451b6 1-59
+packages/fleetlens/tests/test_docs_pins.py
+  s_d5ea2fae8a9c21::t_b23073e7caecb8 1-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa6d016c819e644a9a3a518ccf83c9dc80cd7705",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
