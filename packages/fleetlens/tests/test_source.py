@@ -15,6 +15,7 @@ from fleetlens import indexing
 from fleetlens.server.app import build_context
 from fleetlens.server.tools import register_all
 from fleetlens.server.tools import source as source_tool
+from fleetlens.service.source import SourceService
 from fleetlens.store.models import KnowledgeObject
 from fleetlens.store.sqlite import SqliteStore
 
@@ -348,3 +349,173 @@ def test_the_indexer_still_produces_what_this_reads(tmp_path):
     from fleetlens.service.source import SourceService
     out = SourceService(store, store).get_source(syms[0].id)
     assert out["status"] == "ok" and "def get_order" in out["source"], out
+
+
+# -- libraries -------------------------------------------------------------------------
+
+LIB_SOURCE = """\
+class HTTPException(Exception):
+    def __init__(self, status_code, error):
+        self.status_code = status_code
+        self.error = error
+"""
+
+
+def _build_library(base: Path, *, at: str = "."):
+    """A library checkout plus the rows an index of it would hold.
+
+    Mirrors `_build`, with the one difference that matters: `index_one` files a library
+    under `library:<slug>`, never `service:<slug>`, because a shared package is
+    deliberately not a node in the mesh. `at` puts the library in a subdirectory, which is
+    how a repository holding several packages is laid out and which exercises the path
+    rebasing that reading from a commit needs.
+    """
+    repo = base / "commonlib"
+    code_dir = repo if at == "." else repo / at
+    (code_dir / "pkg").mkdir(parents=True)
+    (code_dir / "pkg" / "exceptions.py").write_text(LIB_SOURCE)
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+    sha = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                         capture_output=True, text=True, check=True).stdout.strip()
+
+    store = SqliteStore(":memory:")
+    store.upsert_object(KnowledgeObject(
+        "library", "commonlib", "commonlib", None, "unknown", "static", "index", None,
+        None, {"root": str(code_dir), "symbol_count": 1}))
+    store.upsert_object(KnowledgeObject(
+        "code_symbol", "commonlib:pkg/exceptions.py::HTTPException", "HTTPException", None,
+        "unknown", "callgraph", "callgraph", None, None,
+        {"path": "pkg/exceptions.py", "qualname": "HTTPException", "kind": "class",
+         "lang": "python", "line_start": 1, "line_end": 4,
+         "file_sha": _sha(code_dir / "pkg" / "exceptions.py")}))
+    store.stamp_build({repo.name: sha})
+    store.commit()
+    return repo, store
+
+
+def test_a_library_symbol_is_readable(tmp_path):
+    """The regression this file existed without.
+
+    Resolving a slug only under `service:` made every symbol in every library unreadable,
+    while `find_symbol` and `get_symbol` answered for them normally, and the refusal
+    blamed a missing checkout that was in fact present and indexed.
+    """
+    _, store = _build_library(tmp_path)
+    out = SourceService(store, store).get_source(
+        "code_symbol:commonlib:pkg/exceptions.py::HTTPException")
+    assert out["status"] == "ok", out
+    assert "class HTTPException" in out["source"]
+    assert out["verified"] is True
+    assert out["read_from"] == "commit"
+
+
+def test_a_library_in_a_subdirectory_is_read_at_the_commit(tmp_path):
+    """The path has to be rebased onto the checkout root before git will recognise it."""
+    _, store = _build_library(tmp_path, at="packages/commonlib")
+    out = SourceService(store, store).get_source(
+        "code_symbol:commonlib:pkg/exceptions.py::HTTPException")
+    assert out["status"] == "ok", out
+    assert out["path"] == "packages/commonlib/pkg/exceptions.py"
+    assert out["read_from"] == "commit" and out["verified"] is True
+
+
+def test_a_service_still_wins_when_both_kinds_share_a_slug(tmp_path):
+    """Services are looked up first, so an ambiguous slug keeps its old meaning."""
+    repo, store = _build(tmp_path)
+    store.upsert_object(KnowledgeObject(
+        "library", "orders", "orders", None, "unknown", "static", "index", None, None,
+        {"root": "/nowhere/that/exists", "symbol_count": 1}))
+    store.commit()
+    out = SourceService(store, store).get_source(_symbol(store))
+    assert out["status"] == "ok", out
+
+
+def test_an_orphaned_symbol_does_not_blame_the_machine(indexed_fresh):
+    """The two failures used to share a message.
+
+    A symbol whose service row is gone is reachable: removing a service leaves its symbols
+    behind, which this project already lists as a known limit. Nothing about the machine
+    fixes that, so "not on this machine" sent people to look where the problem was not.
+    An unknown *symbol* never gets this far; it is `not_found` before the slug is resolved.
+    """
+    _, store = indexed_fresh
+    store.upsert_object(KnowledgeObject(
+        "code_symbol", "deletedsvc:app/main.py::whatever", "whatever", None, "unknown",
+        "callgraph", "callgraph", None, None,
+        {"path": "app/main.py", "qualname": "whatever", "kind": "function",
+         "lang": "python", "line_start": 1, "line_end": 2, "file_sha": "0" * 12}))
+    store.commit()
+
+    out = SourceService(store, store).get_source(
+        "code_symbol:deletedsvc:app/main.py::whatever")
+    assert out["status"] == "unavailable"
+    assert "not a service or library in this index" in out["reason"]
+    assert "not on this machine" not in out["reason"]
+    assert "re-index" not in out.get("hint", "")
+
+
+# -- pinned reads ----------------------------------------------------------------------
+
+def test_a_pinned_read_uses_the_pin_s_commit_not_the_live_one(tmp_path):
+    """End to end through the routing the HTTP server uses.
+
+    `RoutingContext.source` resolves per request, so a request for a pin must read source
+    at the pin's commit. Nothing exercised that: the routing tests covered `store`,
+    `relationships` and `discovery`, and this is the attribute where being wrong returns
+    confident, plausible, wrong code.
+    """
+    from fleetlens.server.routing import ContextRegistry, RoutingContext, current_alias
+
+    repo, pinned_store = _build(tmp_path)
+    symbol = _symbol(pinned_store)
+
+    # The checkout moves on, and a second index records the newer commit for it.
+    (repo / "app" / "main.py").write_text(REWRITTEN)
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "rewrite")
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+    live_store = SqliteStore(":memory:")
+    live_store.upsert_object(KnowledgeObject(
+        "service", "orders", "orders", None, "unknown", "static", "index", None, None,
+        {"root": str(repo), "symbol_count": 1}))
+    live_store.upsert_object(KnowledgeObject(
+        "code_symbol", "orders:app/main.py::something_entirely_different",
+        "something_entirely_different", None, "unknown", "callgraph", "callgraph", None,
+        None, {"path": "app/main.py", "qualname": "something_entirely_different",
+               "kind": "function", "lang": "python", "line_start": 11, "line_end": 12,
+               "file_sha": _sha(repo / "app" / "main.py")}))
+    live_store.stamp_build({repo.name: head})
+    live_store.commit()
+
+    class _Ctx:
+        def __init__(self, store):
+            self.store = store
+            self.source = SourceService(store, store)
+
+        def close(self):
+            pass
+
+    class _Pins:
+        def snapshot_path(self, alias):
+            return "/pins/snap.db" if alias == "snap" else None
+
+    reg = ContextRegistry(_Ctx(live_store), _Pins(),
+                          build=lambda path: _Ctx(pinned_store))
+    ctx = RoutingContext(reg)
+
+    # Live: the old symbol is gone from this index entirely.
+    assert ctx.source.get_source(symbol)["status"] == "not_found"
+
+    token = current_alias.set("snap")
+    try:
+        out = ctx.source.get_source(symbol)
+    finally:
+        current_alias.reset(token)
+
+    assert out["status"] == "ok", out
+    assert "def get_order" in out["source"], "a pin must read at the commit it pinned"
+    assert out["read_from"] == "commit" and out["verified"] is True
