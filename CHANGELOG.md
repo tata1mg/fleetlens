@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.3.1
+
+`get_source` could not read a single symbol in a library.
+
+A repository declared as a library is filed as `library:<slug>`, never `service:<slug>`,
+so that a shared package does not become a node in the mesh or inflate the service count.
+`get_source` resolved a symbol's slug by looking only under `service:`, so every library
+in the index was unreadable while `find_symbol` and `get_symbol` answered for them
+normally. Both object types already record the `root` the read needs; they differ only in
+the key they are filed under.
+
+This is the headline feature of 0.3.0 failing for an entire object type, and shared
+packages are exactly the code an agent is most often sent to read.
+
+### The refusal was wrong too, not just unhelpful
+
+It reported "the checkout for '<slug>' is not on this machine" for a checkout that was
+present, indexed, and had its commit recorded. Two unrelated failures shared one return:
+a slug that matches no object, which no amount of re-indexing or remounting will fix, and
+a recorded root that is no longer on disk, which is a deployment problem. They now give
+different reasons and different hints.
+
+### Upgrading
+
+No re-index. The library rows already carry everything the read needs, so the fix takes
+effect as soon as the server restarts on this version.
+
+### Tests
+
+`test_source.py` had no library case, which is why this shipped. It now covers a library
+at the checkout root and one in a subdirectory, since the path has to be rebased onto the
+checkout before git will recognise it, and both fail against the previous code.
+
+Closing one gap turned up another. Nothing exercised `get_source` against a pin, and the
+routing tests asserted that the store, the relationship service and the discovery service
+follow the request's alias but not the source service, which is the one attribute where
+being wrong returns confident, plausible, wrong code rather than an error. Covered now,
+end to end: a repository indexed at one commit and pinned, the checkout moved on, and the
+pinned read still answering from the commit it pinned.
+
 ## 0.3.0
 
 Read the source behind an indexed symbol, when the operator allows it.
