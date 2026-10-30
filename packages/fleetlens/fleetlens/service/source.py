@@ -76,28 +76,52 @@ class SourceService:
             resp["did_you_mean"] = hits
         return resp
 
-    def _repo_for(self, slug: str) -> Optional[tuple[Path, Path, Optional[str]]]:
-        """(checkout root, service dir relative to it, indexed commit) for a service slug.
+    def _root_of(self, slug: str) -> Optional[str]:
+        """Where the repository behind `slug` was indexed from, whatever kind it is.
 
-        The service payload records where the service lived, which for a repository holding
-        several services is a subdirectory. Commits are recorded per *checkout*, so the
-        checkout root has to be found before the sha can be looked up, and the symbol's path
-        has to be rebased onto it before git will recognise it.
+        A slug is a service for most repositories and a library for the rest. Both objects
+        record `root`; they differ only in the key they are filed under, because a shared
+        package is deliberately not a node in the mesh (`indexing.index_one`). Looking only
+        under `service:` made every symbol in every library unreadable while `find_symbol`
+        and `get_symbol` answered for them normally.
         """
-        svc = self.knowledge.get(f"service:{slug}")
-        if svc is None:
-            return None
-        root = str((svc.payload or {}).get("root") or "")
+        for kind in ("service", "library"):
+            obj = self.knowledge.get(f"{kind}:{slug}")
+            if obj is not None:
+                return str((obj.payload or {}).get("root") or "")
+        return None
+
+    def _repo_for(self, slug: str) -> tuple[Path, Path, Optional[str]] | dict[str, str]:
+        """(checkout root, dir relative to it, indexed commit), or why that is unavailable.
+
+        The payload records where the code lived, which for a repository holding several
+        services is a subdirectory. Commits are recorded per *checkout*, so the checkout
+        root has to be found before the sha can be looked up, and the symbol's path has to
+        be rebased onto it before git will recognise it.
+
+        Returns the reason rather than a bare `None` because the two ways this fails want
+        opposite responses. A slug matching no object is a stale or malformed id and
+        nothing about the machine will fix it; a slug whose recorded root is gone is a
+        deployment problem. Collapsing them sent anyone hitting the first to go looking at
+        mounts and re-indexing.
+        """
+        root = self._root_of(slug)
+        if root is None:
+            return {"reason": f"'{slug}' is not a service or library in this index",
+                    "hint": "ids look like code_symbol:<slug>:<path>::<qualname>; "
+                            "`list_services` and `get_index_info` show what is indexed"}
         if not root or not Path(root).is_dir():
-            return None
-        service_dir = Path(root)
-        top = _git(["rev-parse", "--show-toplevel"], service_dir)
+            return {"reason": f"the checkout for '{slug}' is not on this machine",
+                    "hint": "an index outlives the repositories it was built from; "
+                            "re-index, or serve from the machine that holds them"}
+        code_dir = Path(root)
+        top = _git(["rev-parse", "--show-toplevel"], code_dir)
         if not top:
             # Not a checkout. Still readable from disk, just never from history.
-            return service_dir, Path("."), None
+            return code_dir, Path("."), None
         checkout = Path(top.strip())
         try:
-            prefix = service_dir.resolve().relative_to(checkout.resolve())
+            prefix = code_dir.resolve().relative_to(checkout.resolve())
         except ValueError:
             prefix = Path(".")
         return checkout, prefix, self.store.repo_shas().get(checkout.name)
@@ -148,11 +172,8 @@ class SourceService:
         slug = symbol_id.split(":", 2)[1] if symbol_id.startswith(f"{NODE_TYPE}:") \
             else symbol_id.split(":", 1)[0]
         located = self._repo_for(slug)
-        if located is None:
-            return {"status": "unavailable", "id": symbol_id,
-                    "reason": f"the checkout for '{slug}' is not on this machine",
-                    "hint": "an index outlives the repositories it was built from; "
-                            "re-index, or serve from the machine that holds them"}
+        if isinstance(located, dict):
+            return {"status": "unavailable", "id": symbol_id, **located}
         checkout, prefix, sha = located
         in_repo = (prefix / rel).as_posix() if str(prefix) != "." else rel
 

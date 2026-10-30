@@ -28,6 +28,7 @@ class FakeCtx:
         self.callgraph = f"cg-{name}"
         self.relationships = f"rel-{name}"
         self.discovery = f"disc-{name}"
+        self.source = f"src-{name}"
 
     def close(self):
         self.store.close()
@@ -127,6 +128,9 @@ def test_the_routing_context_follows_the_current_alias():
         assert ctx.store.name == "/pins/a.db"
         assert ctx.relationships == "rel-/pins/a.db"
         assert ctx.discovery == "disc-/pins/a.db"
+        # `source` reads files rather than rows, so following the alias is what keeps a
+        # pinned read at the pin's commit instead of today's working tree.
+        assert ctx.source == "src-/pins/a.db"
     finally:
         current_alias.reset(token)
     assert ctx.store.name == "live", "the alias must not leak past the request"
