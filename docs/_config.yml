@@ -1,0 +1,17 @@
+# GitHub Pages, served from this folder.
+#
+# A theme and nothing else. The pages here are the project's real documentation, written as
+# Markdown for people reading them on GitHub, and they have to stay readable there: anything
+# that renders only through Jekyll would make the repository the worse copy. So no layouts,
+# no includes, no Liquid in the content, and every link in these files is a plain relative
+# one that resolves both on GitHub and on the site.
+#
+# `tools.md` is generated from the server's own tool registrations by
+# `python -m fleetlens.server.toolsdoc`, and a test fails when it drifts. Publishing it
+# costs nothing and it cannot go stale.
+title: fleetlens
+description: >-
+  The cross-repo context your coding agent can't grep for. A service graph for
+  microservices, derived from source and served over MCP.
+theme: jekyll-theme-cayman
+show_downloads: false
