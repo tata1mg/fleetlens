@@ -1,0 +1,97 @@
+.github/workflows/ci.yml
+  s_1f7e23261d0b8e::t_528fe6af5fa952 61,129,131,145,155,187
+CHANGELOG.md
+  s_1f7e23261d0b8e::t_ccbc8ed2512798 19-21
+CONTRIBUTING.md
+  s_1f7e23261d0b8e::t_d0dc215e040455 73
+Dockerfile
+  s_1f7e23261d0b8e::t_2d93442cf4e5c5 21,67
+README.md
+  s_1f7e23261d0b8e::t_fea0a0af9b49c9 82,88-90,97,101-102,119,127-129,153,173,183,193,208,327,345-346,349-350,390,445,497
+SECURITY.md
+  s_1f7e23261d0b8e::t_5412a40286b6fd 17,24
+bench/mcp_perf.py
+  s_1f7e23261d0b8e::t_f1c26444e0461a 6,264
+bench/run.py
+  s_1f7e23261d0b8e::t_8a1070506c1aaf 189
+docker-compose.yml
+  s_1f7e23261d0b8e::t_88d7c7a15c9ffa 21-22,26
+docs/deployment.md
+  s_1f7e23261d0b8e::t_0ca5cd43c67a06 19,23-24,179,228
+docs/index.md
+  s_1f7e23261d0b8e::t_d4cb4eec64d6f2 45-46
+docs/pinning.md
+  s_1f7e23261d0b8e::t_d5f17a08193c97 17,25,43,62-65,68,102,147,155,158,161-162,178
+docs/tools.md
+  s_1f7e23261d0b8e::t_d18af1017a7f78 15
+packages/mind1/README.md
+  s_1f7e23261d0b8e::t_cbda821035e45c 28-30
+packages/mind1/mind1/adapters/python_web.py
+  s_1f7e23261d0b8e::t_8af98e87dc4b09 29,470
+packages/mind1/mind1/callgraph/README.md
+  s_1f7e23261d0b8e::t_876c35336adee8 40
+packages/mind1/mind1/callgraph/cli.py
+  s_1f7e23261d0b8e::t_99eba870e12e64 1,9,46,62,100,149,167,186,204,212,224,235,248
+packages/mind1/mind1/cli.py
+  s_1f7e23261d0b8e::t_54b9c263c817db 1,3-8,224,249,253,270,277,284,288,295,297,299,301,311,315,336,339,342,363,375,388,394,407,411,418,435,481,486,492,509,515-516,596,603,649,651
+packages/mind1/mind1/doctor.py
+  s_1f7e23261d0b8e::t_331f2b76e3cfc6 1,80,122,230
+packages/mind1/mind1/guidance/load.py
+  s_1f7e23261d0b8e::t_c8d3a2810f0d19 233
+packages/mind1/mind1/indexing.py
+  s_1f7e23261d0b8e::t_6e283a357a816e 3,179
+packages/mind1/mind1/manifest.py
+  s_1f7e23261d0b8e::t_8574fc83efdac4 24
+packages/mind1/mind1/pin_client.py
+  s_1f7e23261d0b8e::t_69cabc5a56ecc7 1,84,133
+packages/mind1/mind1/pins.py
+  s_1f7e23261d0b8e::t_f73abb31562377 69,176,325
+packages/mind1/mind1/server/http.py
+  s_1f7e23261d0b8e::t_288d39a507ebae 69,156
+packages/mind1/mind1/server/tools/guidance.py
+  s_1f7e23261d0b8e::t_c0506c58b4b6ca 129
+packages/mind1/mind1/server/toolsdoc.py
+  s_1f7e23261d0b8e::t_ae820e3c4e1a1c 123
+packages/mind1/mind1/service/discovery.py
+  s_1f7e23261d0b8e::t_a283f0f2bd1aec 25
+packages/mind1/mind1/store/sqlite.py
+  s_1f7e23261d0b8e::t_0ea6df6ec65938 20-21,294
+packages/mind1/mind1/symbols/cli.py
+  s_1f7e23261d0b8e::t_3561e5d0da132d 1,17,27,32,44
+packages/mind1/pyproject.toml
+  s_1f7e23261d0b8e::t_5f2d4bdb0f0cca 52-54
+packages/mind1/tests/test_callgraph_cli.py
+  s_1f7e23261d0b8e::t_b8a6ab9fa5eed0 36,104
+packages/mind1/tests/test_cross_repo_e2e.py
+  s_1f7e23261d0b8e::t_eee38e95f144be 146
+packages/mind1/tests/test_gaps.py
+  s_1f7e23261d0b8e::t_0b9d9855026966 236
+packages/mind1/tests/test_guidance.py
+  s_1f7e23261d0b8e::t_8cb2ca73dfebac 384
+packages/mind1/tests/test_indexing.py
+  s_1f7e23261d0b8e::t_0faf43b5892350 11
+packages/mind1/tests/test_pin_admin.py
+  s_1f7e23261d0b8e::t_e156220cd1695e 38
+packages/mind1/tests/test_pin_client.py
+  s_1f7e23261d0b8e::t_b0882e0032fa03 1,198
+packages/mind1/tests/test_pins.py
+  s_1f7e23261d0b8e::t_a5903b74c6fd43 61
+packages/mind1/tests/test_route_coverage.py
+  s_1f7e23261d0b8e::t_fa184311fb7fee 309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "74aaa2713c4935f1aa6cf27accbc6efb266edfa7",
+  "prompts": {},
+  "sessions": {
+    "s_1f7e23261d0b8e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "27cdebf8-0e3b-4b2c-a0df-e788ee49dd1a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
