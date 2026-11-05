@@ -1,18 +1,18 @@
 """Generate the C4 (diagno + hih) question set and its ground truth.
 
-Ground truth is derived here, independently of fleetlens, by simple regex over source and
-config. A deliberately different and simpler method than fleetlens's AST/SCIP pipeline, so
+Ground truth is derived here, independently of mind1, by simple regex over source and
+config. A deliberately different and simpler method than mind1's AST/SCIP pipeline, so
 the two do not share an implementation and cannot share a blind spot by construction.
 
 Simpler must not mean narrower than the thing being measured. The first version matched one
 spelling of a route decorator over Python files only, so a Rails service and three services
-using a house framework read as exposing no HTTP surface, and fleetlens would have been
+using a house framework read as exposing no HTTP surface, and mind1 would have been
 marked wrong for finding routes that are plainly there. Independence is the point of this
 file; being less capable than the tool under test is not.
 
 Questions target what a single grep cannot do cheaply: exhaustive enumeration over 16 repos,
 reverse lookups, set intersections, ranking, and negative claims. The pilot showed that
-questions answerable by locating one literal string measure grep, not fleetlens.
+questions answerable by locating one literal string measure grep, not mind1.
 
     python bench/make_questions_c4.py --out bench/questions/c4.jsonl
 """
@@ -30,7 +30,7 @@ ROOTS: dict = {}
 SKIP = {"venv", ".venv", "node_modules", ".git", "__pycache__", ".context", ".claude"}
 
 # JSON-quoted and YAML-bare forms. Missing the YAML form understated ground truth on the
-# first pass: droplet's settings.yml declares a dependency fleetlens found and we did not.
+# first pass: droplet's settings.yml declares a dependency mind1 found and we did not.
 HOSTKEY = re.compile(r"""["']([A-Za-z0-9_.\-]*(?:HOST|URL|ENDPOINT|BASE_URI)[A-Za-z0-9_.\-]*)["']\s*:\s*["']([^"']+)["']""", re.I)
 HOSTKEY_YAML = re.compile(r"""^\s*([A-Za-z0-9_.\-]*(?:HOST|URL|ENDPOINT|BASE_URI)[A-Za-z0-9_.\-]*)\s*:\s*['"]?([^'"\n#]+)""", re.I | re.M)
 # Attribute form (`@app.get("/x")`), bare form (`@get("/x")`, used by house frameworks that

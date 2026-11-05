@@ -1,7 +1,7 @@
-# fleetlens MCP tools
+# mind1 MCP tools
 
 Generated from the server's own tool registrations by
-`python -m fleetlens.server.toolsdoc`. Do not edit by hand: a test regenerates this
+`python -m mind1.server.toolsdoc`. Do not edit by hand: a test regenerates this
 page and fails when it differs, so a signature or docstring change that is not
 reflected here turns CI red.
 
@@ -28,7 +28,7 @@ no embeddings advertises 10 of these 15.
 | [`get_index_info`](#get_index_info) | always |
 | [`get_service_graph`](#get_service_graph) | always |
 | [`get_service_relationships`](#get_service_relationships) | always |
-| [`get_source`](#get_source) | `--http` **and** `FLEETLENS_EXPOSE_SOURCE` is set |
+| [`get_source`](#get_source) | `--http` **and** `MIND1_EXPOSE_SOURCE` is set |
 | [`get_symbol`](#get_symbol) | always |
 | [`list_interfaces`](#list_interfaces) | always |
 | [`list_services`](#list_services) | always |
@@ -228,7 +228,7 @@ evidence that produced it.
 
 ## get_source
 
-**Registered when** `--http` **and** `FLEETLENS_EXPOSE_SOURCE` is set.
+**Registered when** `--http` **and** `MIND1_EXPOSE_SOURCE` is set.
 
 | Parameter | Type | Default |
 |---|---|---|

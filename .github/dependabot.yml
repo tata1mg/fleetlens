@@ -3,7 +3,7 @@
 version: 2
 updates:
   - package-ecosystem: pip
-    directory: /packages/fleetlens
+    directory: /packages/mind1
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

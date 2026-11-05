@@ -1,4 +1,4 @@
-# fleetlens
+# mind1
 
 > **The cross-repo context your coding agent can't grep for.**
 
@@ -13,14 +13,14 @@ Ask an agent what breaks if you change `POST /orders` and it greps the repositor
 it, finds nothing, and answers from inference. That failure is hard to spot, because a
 confident guess about a service boundary reads exactly like a fact.
 
-fleetlens builds the missing layer. Point it at a folder of service repositories and it derives
+mind1 builds the missing layer. Point it at a folder of service repositories and it derives
 the cross-repo service graph: who calls whom over HTTP, who publishes and consumes which
 queues, and which endpoint maps to which handler. Then it serves that graph to your agent over
 [MCP](https://modelcontextprotocol.io).
 
 ### Deterministic first
 
-This is what separates fleetlens from a tool that asks a model to read your code.
+This is what separates mind1 from a tool that asks a model to read your code.
 
 The graph is built by parsing source. Python and TypeScript syntax trees, Rails routing
 files, and SCIP call graphs. Nothing is sampled, so no answer changes because a model was
@@ -29,11 +29,11 @@ same graph. The toolchain is part of that: the call graph is built by an externa
 indexer that resolves imports through the installed dependencies, so a repository whose
 virtualenv has changed can yield different call edges from the same source. Routes, queues
 and outbound calls are read from the syntax tree alone, so they move only when the source or
-fleetlens's own parsers change. Every fact records
+mind1's own parsers change. Every fact records
 the file and line it came from, so you can go and check it yourself.
 
 When a parser cannot work out a path, it writes down where it got stuck instead of guessing.
-A route fleetlens could not read becomes a number in the output that you can act on. This
+A route mind1 could not read becomes a number in the output that you can act on. This
 matters because a confident guess about a service boundary reads exactly like a fact, and
 that is the failure the whole project exists to avoid.
 
@@ -57,14 +57,14 @@ usually decides which of the two you pick.
 ## Quickstart
 
 You need Python 3.10 or newer, Node and npm for the indexers below, and git, which
-fleetlens runs at index time to record the commit each repository was at.
+mind1 runs at index time to record the commit each repository was at.
 
-fleetlens is not on PyPI yet, so install from source:
+mind1 is not on PyPI yet, so install from source:
 
 ```bash
-git clone https://github.com/tata1mg/fleetlens.git
-cd fleetlens
-pip install -e "packages/fleetlens[all]"
+git clone https://github.com/tata1mg/mind1.git
+cd mind1
+pip install -e "packages/mind1[all]"
 ```
 
 It shells out to a per-language [SCIP](https://github.com/sourcegraph/scip) indexer for the
@@ -86,15 +86,15 @@ Index a folder of service repos into one shared SQLite file, then serve it:
 
 ```bash
 fl doctor
-fl index-all /path/to/your/services --db "$PWD/fleetlens.db"
-fl serve --db "$PWD/fleetlens.db"
+fl index-all /path/to/your/services --db "$PWD/mind1.db"
+fl serve --db "$PWD/mind1.db"
 ```
 
 Point your MCP client at it over stdio. On Claude Code that is one command, and `which`
 and `$PWD` fill in the two paths for you:
 
 ```bash
-claude mcp add fleetlens -- "$(which fl)" serve --db "$PWD/fleetlens.db"
+claude mcp add mind1 -- "$(which fl)" serve --db "$PWD/mind1.db"
 ```
 
 Any other client wants the same thing as JSON. Use absolute paths for both the executable
@@ -105,9 +105,9 @@ that most often turn a working index into an agent that reports no services.
 ```json
 {
   "mcpServers": {
-    "fleetlens": {
+    "mind1": {
       "command": "/absolute/path/to/fl",
-      "args": ["serve", "--db", "/absolute/path/to/fleetlens.db"]
+      "args": ["serve", "--db", "/absolute/path/to/mind1.db"]
     }
   }
 }
@@ -124,9 +124,9 @@ streamable-HTTP behind a shared bearer token, with the index opened read-only. S
 <summary>Other commands</summary>
 
 ```bash
-fl index /path/to/repo --db fleetlens.db     # a single repo instead of a fleet
-fl resolve --db fleetlens.db                 # recompute cross-repo edges
-fl export-graph --db fleetlens.db -o mesh.html   # self-contained HTML render, no server
+fl index /path/to/repo --db mind1.db     # a single repo instead of a fleet
+fl resolve --db mind1.db                 # recompute cross-repo edges
+fl export-graph --db mind1.db -o mesh.html   # self-contained HTML render, no server
 ```
 </details>
 
@@ -165,7 +165,7 @@ moment you are measuring something. Change a prompt, rerun the agent, get a diff
 and you cannot tell whether your change did it or the index moved underneath you.
 
 Pinning freezes a copy of the index and serves it at its own URL, so the same question
-gets the same context tomorrow. It fixes fleetlens's side of the experiment, not the model's:
+gets the same context tomorrow. It fixes mind1's side of the experiment, not the model's:
 an agent may still word things differently run to run, but it is no longer reading a
 different fleet.
 
@@ -175,8 +175,8 @@ fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 ```
 
 ```
-http://fleetlens.internal:8081/mcp               # always the newest index
-http://fleetlens.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
+http://mind1.internal:8081/mcp               # always the newest index
+http://mind1.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
 ```
 
 Same tools, same token, same indexed context, and an alias that does not exist returns 404 rather
@@ -205,7 +205,7 @@ validate, in what order does it call its dependencies, which branch returns the 
 are chasing.
 
 ```bash
-FLEETLENS_EXPOSE_SOURCE=1 fl serve --http --host 0.0.0.0
+MIND1_EXPOSE_SOURCE=1 fl serve --http --host 0.0.0.0
 ```
 
 ```
@@ -219,7 +219,7 @@ get_source("code_symbol:orders:app/main.py::get_order")
 
 It takes the symbol ids the other tools already return, so an agent locates a symbol and
 then reads it. It is scoped to that symbol's span rather than the file, capped, and there is
-no whole-file mode, because the reason fleetlens gets an agent to an answer in fewer tokens
+no whole-file mode, because the reason mind1 gets an agent to an answer in fewer tokens
 is that it stops opening files.
 
 A line number means nothing without the file it was counted in, so the index records a hash
@@ -307,7 +307,7 @@ binding rather than a hostname, and they are deliberately conservative: matching
 tokens, so `orders` never matches `reorders-legacy`, and a resolver returns nothing rather
 than guess, because a wrong answer invents a dependency that never existed.
 
-Two escape hatches for the addresses they decline. Declare the mapping in `fleetlens.yaml`
+Two escape hatches for the addresses they decline. Declare the mapping in `mind1.yaml`
 under `hosts:`, which needs no code, or register your own resolver, which is a class with one
 method and no fork: [writing a host resolver](CONTRIBUTING.md#writing-a-host-resolver).
 
@@ -324,7 +324,7 @@ to `.context/skipped.json`.
 
 ```bash
 ollama pull qwen2.5-coder:7b
-fl index <repo> --db fleetlens.db --fill-gaps   # resolve those sites, and only those
+fl index <repo> --db mind1.db --fill-gaps   # resolve those sites, and only those
 ```
 
 Each site gets the snippet plus the definitions it references, and every answer is
@@ -342,8 +342,8 @@ work too (`--provider openai`), and those do send code to an API, which is why t
 ```bash
 ollama pull bge-m3            # embeddings
 ollama pull qwen2.5-coder:7b  # summaries
-fl enrich --db fleetlens.db                       # summaries + embeddings, only what changed
-fl serve  --db fleetlens.db --embed-model bge-m3  # enables discover_* tools
+fl enrich --db mind1.db                       # summaries + embeddings, only what changed
+fl serve  --db mind1.db --embed-model bge-m3  # enables discover_* tools
 ```
 
 `fl enrich` writes both summaries and embeddings by default, so it needs both models and
@@ -351,11 +351,11 @@ exits with an error if either is missing. `fl enrich --pull` fetches whatever is
 To skip the summaries and index embeddings alone, pass `--kinds` without them.
 </details>
 
-### fleetlens.yaml, for when the guess is wrong
+### mind1.yaml, for when the guess is wrong
 
 Everything above is inferred, and the inference is that one repo is one service named after
-its directory. A `fleetlens.yaml` at a repo root overrides that. Four keys, each optional,
-and `fleetlens.yml` and `fleetlens.json` work the same:
+its directory. A `mind1.yaml` at a repo root overrides that. Four keys, each optional,
+and `mind1.yml` and `mind1.json` work the same:
 
 | Key | Declares | Without it |
 |---|---|---|
@@ -365,7 +365,7 @@ and `fleetlens.yml` and `fleetlens.json` work the same:
 | `hosts` | hostnames mapped to service names, for addresses the resolvers decline | heuristics only |
 
 ```yaml
-# fleetlens.yaml
+# mind1.yaml
 services:
   - name: orders
     path: services/orders
@@ -393,7 +393,7 @@ helper that already exists turns up before someone writes it again.
 
 ### Excluding directories
 
-A repo controls what fleetlens reads with a `.fleetlensignore` at its root, one
+A repo controls what mind1 reads with a `.mind1ignore` at its root, one
 gitignore-style pattern per line:
 
 ```
@@ -414,7 +414,7 @@ apply.
 The comparison worth making is where each one's facts come from, because that is what does
 not change when any of these ships a new feature.
 
-|  | fleetlens | Sourcegraph / SCIP | Backstage | OpenTelemetry |
+|  | mind1 | Sourcegraph / SCIP | Backstage | OpenTelemetry |
 |---|---|---|---|---|
 | Where the service graph comes from | parsed from source | a code index, built for navigation | a catalog you own and populate | observed traces |
 | Needs running services | no | no | no | **yes** |
@@ -434,7 +434,7 @@ the descriptor states, and a descriptor can be right, stale or absent independen
 code. Here that edge is read out of the call site, which is why it carries a file and a line
 and a confidence rather than an author.
 
-fleetlens is not a code-search engine, not a service catalog you curate, and not a repo
+mind1 is not a code-search engine, not a service catalog you curate, and not a repo
 chatbot. It is the derived graph that sits underneath those, and MCP is its only interface:
 there is no UI, because the reader is an agent.
 
@@ -488,7 +488,7 @@ of them and a repository in one of those languages is not discovered by a fleet 
 ## Security
 
 The deterministic core runs entirely on your machine and contacts nothing. Config is read for
-structure, never for secret values, and `.fleetlensignore` is fail-closed.
+structure, never for secret values, and `.mind1ignore` is fail-closed.
 
 The LLM tiers are the only path that can send anything anywhere. They are off by default, and
 with Ollama they stay on your hardware. With `--provider openai` they do not: prompts carry
@@ -497,7 +497,7 @@ endpoint paths, handler names and docstrings.
 `fl serve --http` is protected by one shared bearer token and offers no TLS, no per-user
 identity and no rotation without a restart. Run it on a private network.
 
-### What `FLEETLENS_EXPOSE_SOURCE` costs you
+### What `MIND1_EXPOSE_SOURCE` costs you
 
 Worth being blunt about, because it changes what the server is rather than adding to it.
 
@@ -514,13 +514,13 @@ a code-read API, and the server does not become more careful because you set the
 Two things limit the blast radius, and it is worth knowing exactly how far they go:
 
 - **Only indexed symbols are readable.** There is no path argument, so nothing outside the
-  index can be reached, and files excluded by `.fleetlensignore` or by the always-excluded
+  index can be reached, and files excluded by `.mind1ignore` or by the always-excluded
   patterns were never indexed in the first place. The protection is that the span does not
   exist, not that a check rejects it.
 - **Exclusions are name-based.** A credential sitting inside an ordinary source file is
   readable, exactly as it is to anyone who can clone the repository.
 
-So the question to ask is not whether fleetlens leaks source. It is whether everyone holding
+So the question to ask is not whether mind1 leaks source. It is whether everyone holding
 the shared token should be able to read every repository in the index. Where that is already
 true, such as a team whose members can clone all of them anyway, this changes little. Where
 it is not, leave it off.
@@ -535,17 +535,17 @@ that confused a parser are especially welcome.
 
 ## Benchmark
 
-Two measurements. The first asks whether fleetlens makes a coding agent better at questions
+Two measurements. The first asks whether mind1 makes a coding agent better at questions
 that span several repositories. The second asks how fast the server answers when several
 agents are using it at once.
 
 ### Does it help an agent?
 
 A controlled study on one private 16 service corpus. One coding agent, 12 questions
-spanning several repositories, run with and without the fleetlens MCP server available and
+spanning several repositories, run with and without the mind1 MCP server available and
 everything else held constant: 24 runs per arm, 2 repetitions per question per arm.
 
-| | baseline | with fleetlens | change |
+| | baseline | with mind1 | change |
 |---|---|---|---|
 | F1 against ground truth | 0.788 | 0.888 | +13% |
 | New tokens (mean) | 35,442 | 18,022 | -49% |
@@ -553,13 +553,13 @@ everything else held constant: 24 runs per arm, 2 repetitions per question per a
 
 Read one caveat with those numbers. The size of the benefit depended more on whether the
 agent discovered the tools at all than on the arm it was in: in the runs where it never
-called fleetlens, it scored like the baseline. That split was not randomised, because the
+called mind1, it scored like the baseline. That split was not randomised, because the
 agent chose when to go looking, so the gap between an adopting run and a non-adopting one is
 an optimistic figure rather than a measured effect.
 
 One corpus, one framework family, one agent. Treat the numbers as indicative rather than
 general. The questions, the ground truth, the harness, the scoring and the questions where
-fleetlens did not help are all in
+mind1 did not help are all in
 [BENCHMARK.md](BENCHMARK.md) and
 [`bench/`](bench).
 
@@ -568,7 +568,7 @@ fleetlens did not help are all in
 Measured on a real fleet served from one small VM. The index held 205 services, 15,461
 interfaces, 356,164 symbols and 288,596 relationships, in a SQLite file of 664 MB. The
 machine was an AWS m7g.xlarge: Graviton3, 4 virtual CPUs, 16 GB of memory, no swap, running
-fleetlens with its default settings.
+mind1 with its default settings.
 
 Each cell gives the median and the 95th percentile response time in milliseconds, for a
 given number of agents talking to the server at once.
@@ -603,7 +603,7 @@ Reproduce with [`bench/mcp_perf.py`](bench/mcp_perf.py), which samples its
 arguments from whatever index it is pointed at:
 
 ```bash
-python bench/mcp_perf.py --url http://host:8081/mcp --token "$FLEETLENS_TOKEN" \
+python bench/mcp_perf.py --url http://host:8081/mcp --token "$MIND1_TOKEN" \
     --concurrency 1,8,16 --requests 60
 ```
 

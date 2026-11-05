@@ -1,4 +1,4 @@
-# fleetlens
+# mind1
 
 **The cross-repo context your coding agent can't grep for.**
 
@@ -8,7 +8,7 @@ Ask an agent what breaks if you change `POST /orders` and it greps the repositor
 of it, finds nothing, and answers from inference. That failure is hard to spot, because a
 confident guess about a service boundary reads exactly like a fact.
 
-fleetlens builds the missing layer. Point it at a folder of service repositories and it
+mind1 builds the missing layer. Point it at a folder of service repositories and it
 derives the cross-repo service graph: who calls whom over HTTP, who publishes and consumes
 which queues, and which endpoint maps to which handler. Then it serves that graph to your
 agent over [MCP](https://modelcontextprotocol.io).
@@ -16,9 +16,9 @@ agent over [MCP](https://modelcontextprotocol.io).
 ## Measured
 
 A controlled study, 24 runs per arm, 12 cross-repository questions over a 16-service
-corpus, the same agent with and without fleetlens.
+corpus, the same agent with and without mind1.
 
-| | Baseline | fleetlens | Change |
+| | Baseline | mind1 | Change |
 |---|---|---|---|
 | F1 against ground truth | 0.788 | 0.888 | +13% |
 | Fabricated services | 45 | 6 | -87% |
@@ -27,7 +27,7 @@ corpus, the same agent with and without fleetlens.
 | Wall clock (mean) | 115.5s | 35.3s | -69% |
 
 The questions, the ground truth, the harness and the runs where it did not help are all in
-[BENCHMARK.md](https://github.com/tata1mg/fleetlens/blob/main/BENCHMARK.md).
+[BENCHMARK.md](https://github.com/tata1mg/mind1/blob/main/BENCHMARK.md).
 
 ## Deterministic first
 
@@ -41,9 +41,9 @@ and cannot overrule anything they worked out. Switch it off and you still have t
 ## Install
 
 ```bash
-pip install "fleetlens[all] @ git+https://github.com/tata1mg/fleetlens.git@v0.3.1#subdirectory=packages/fleetlens"
-fl index-all ~/repos --db fleetlens.db
-fl serve --db fleetlens.db
+pip install "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
+fl index-all ~/repos --db mind1.db
+fl serve --db mind1.db
 ```
 
 ## Documentation
@@ -51,9 +51,9 @@ fl serve --db fleetlens.db
 - [Deploying a shared server](deployment.md), stdio for one engineer or HTTP for a team
 - [Pinning an index](pinning.md), so an agent evaluation can be reproduced
 - [MCP tool reference](tools.md), generated from the server's own registrations
-- [The full README](https://github.com/tata1mg/fleetlens#readme), which is the canonical
+- [The full README](https://github.com/tata1mg/mind1#readme), which is the canonical
   description of what this does and does not do
-- [Roadmap](https://github.com/tata1mg/fleetlens/blob/main/ROADMAP.md) and
-  [security notes](https://github.com/tata1mg/fleetlens/blob/main/SECURITY.md)
+- [Roadmap](https://github.com/tata1mg/mind1/blob/main/ROADMAP.md) and
+  [security notes](https://github.com/tata1mg/mind1/blob/main/SECURITY.md)
 
-Apache 2.0. Source at [github.com/tata1mg/fleetlens](https://github.com/tata1mg/fleetlens).
+Apache 2.0. Source at [github.com/tata1mg/mind1](https://github.com/tata1mg/mind1).

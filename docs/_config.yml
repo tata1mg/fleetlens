@@ -7,9 +7,9 @@
 # one that resolves both on GitHub and on the site.
 #
 # `tools.md` is generated from the server's own tool registrations by
-# `python -m fleetlens.server.toolsdoc`, and a test fails when it drifts. Publishing it
+# `python -m mind1.server.toolsdoc`, and a test fails when it drifts. Publishing it
 # costs nothing and it cannot go stale.
-title: fleetlens
+title: mind1
 description: >-
   The cross-repo context your coding agent can't grep for. A service graph for
   microservices, derived from source and served over MCP.

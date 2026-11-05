@@ -1,22 +1,22 @@
-# fleetlens in one artifact.
+# mind1 in one artifact.
 #
-# Indexing spans two ecosystems: Python for fleetlens itself, Node for the SCIP indexers that
+# Indexing spans two ecosystems: Python for mind1 itself, Node for the SCIP indexers that
 # build the call graph. This image carries both so trying it out needs nothing installed on
 # the host.
 #
-#   docker build -t fleetlens .
+#   docker build -t mind1 .
 #
-# Index a folder of repositories. Mount them read-write: fleetlens writes a .context/
+# Index a folder of repositories. Mount them read-write: mind1 writes a .context/
 # directory into each one.
 #
-#   docker run --rm -v "$PWD/repos:/repos" -v fleetlens-data:/data \
-#       fleetlens index-all /repos
+#   docker run --rm -v "$PWD/repos:/repos" -v mind1-data:/data \
+#       mind1 index-all /repos
 #
 # Serve the result to a team over HTTP. See docker-compose.yml for the same thing with
 # restart policy and a health check attached.
 #
-#   docker run -d -p 8081:8081 -v fleetlens-data:/data -e FLEETLENS_TOKEN \
-#       fleetlens serve --http --host 0.0.0.0
+#   docker run -d -p 8081:8081 -v mind1-data:/data -e MIND1_TOKEN \
+#       mind1 serve --http --host 0.0.0.0
 #
 # For a single engineer, `fl serve` over stdio on the host is simpler than a container:
 # the MCP client wants to start the process itself.
@@ -25,7 +25,7 @@
 # certificate and both install steps fail. Mount your organisation's CA rather than
 # disabling verification:
 #
-#   docker build --build-arg EXTRA_CA=corp-root.crt -t fleetlens .
+#   docker build --build-arg EXTRA_CA=corp-root.crt -t mind1 .
 
 FROM python:3.12-slim
 
@@ -48,16 +48,16 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-COPY packages/fleetlens/pyproject.toml ./packages/fleetlens/
-COPY packages/fleetlens/fleetlens ./packages/fleetlens/fleetlens
+COPY packages/mind1/pyproject.toml ./packages/mind1/
+COPY packages/mind1/mind1 ./packages/mind1/mind1
 COPY README.md LICENSE ./
-RUN ln -sf ../../README.md packages/fleetlens/README.md \
-    && ln -sf ../../LICENSE packages/fleetlens/LICENSE \
-    && pip install --no-cache-dir "./packages/fleetlens[all]"
+RUN ln -sf ../../README.md packages/mind1/README.md \
+    && ln -sf ../../LICENSE packages/mind1/LICENSE \
+    && pip install --no-cache-dir "./packages/mind1[all]"
 
-# One directory for everything fleetlens owns, so a single volume carries the index between
+# One directory for everything mind1 owns, so a single volume carries the index between
 # the indexing container and the serving one. Repositories are mounted separately.
-ENV FLEETLENS_HOME=/data
+ENV MIND1_HOME=/data
 VOLUME /data
 EXPOSE 8081
 

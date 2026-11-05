@@ -14,7 +14,7 @@ build/
 .idea/
 .vscode/
 
-# Deployment environment files hold FLEETLENS_TOKEN. Untracked is not enough: one
+# Deployment environment files hold MIND1_TOKEN. Untracked is not enough: one
 # `git add -A` is all it takes, and a token in a public repository is a token gone.
 .env
 .env.*

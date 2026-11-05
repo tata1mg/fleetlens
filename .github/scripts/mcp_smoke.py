@@ -1,4 +1,4 @@
-"""Talk to a running fleetlens server the way an agent does, and check what comes back.
+"""Talk to a running mind1 server the way an agent does, and check what comes back.
 
 The rest of CI proves the process starts, the token is enforced and pins can be created.
 None of that touches the MCP protocol: `/mcp` is only ever asked for a 401. So the one

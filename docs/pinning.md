@@ -19,8 +19,8 @@ Two things have to be true of the server, not of your machine:
 ## The short version
 
 ```bash
-export FLEETLENS_URL=http://fleetlens.internal:8081
-export FLEETLENS_TOKEN=...                         # the team's shared token
+export MIND1_URL=http://mind1.internal:8081
+export MIND1_TOKEN=...                         # the team's shared token
 
 fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 # pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
@@ -29,15 +29,15 @@ fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 Then point your MCP client at the pin instead of the live server:
 
 ```
-http://fleetlens.internal:8081/mcp                 # always the newest index
-http://fleetlens.internal:8081/pins/eval-q4/mcp    # your snapshot, until it expires
+http://mind1.internal:8081/mcp                 # always the newest index
+http://mind1.internal:8081/pins/eval-q4/mcp    # your snapshot, until it expires
 ```
 
 Same tools, same token, same responses. Nothing else about your setup changes.
 
 ## How it works
 
-A fleetlens index is one SQLite file, so a pin is a copy of that file with a name and an
+A mind1 index is one SQLite file, so a pin is a copy of that file with a name and an
 expiry date.
 
 1. **`fl pin create` snapshots the index the server is serving right now.** The copy is
@@ -85,16 +85,16 @@ Pick a name you will recognise in three weeks. `eval-q4` is better than `test2`.
 In order of precedence:
 
 1. `--url` and `--token` on the command line
-2. `FLEETLENS_URL` and `FLEETLENS_TOKEN` in the environment
-3. `url` and `token` in `~/.config/fleetlens/config.toml`, or under `$XDG_CONFIG_HOME`
+2. `MIND1_URL` and `MIND1_TOKEN` in the environment
+3. `url` and `token` in `~/.config/mind1/config.toml`, or under `$XDG_CONFIG_HOME`
 
 ```toml
-# ~/.config/fleetlens/config.toml
-url = "http://fleetlens.internal:8081"
+# ~/.config/mind1/config.toml
+url = "http://mind1.internal:8081"
 token = "..."
 ```
 
-`FLEETLENS_TOKEN` is the same shared token your MCP client already sends, so if fleetlens
+`MIND1_TOKEN` is the same shared token your MCP client already sends, so if mind1
 is configured in your editor you already have it.
 
 ### You do not have to install anything
@@ -103,20 +103,20 @@ is configured in your editor you already have it.
 useful from CI or from a machine where you do not want a Python environment:
 
 ```bash
-curl -X POST "$FLEETLENS_URL/pins" \
-     -H "Authorization: Bearer $FLEETLENS_TOKEN" \
+curl -X POST "$MIND1_URL/pins" \
+     -H "Authorization: Bearer $MIND1_TOKEN" \
      -d '{"alias":"eval-q4","reason":"baseline for the Q4 agent run"}'
 
-curl -H "Authorization: Bearer $FLEETLENS_TOKEN" "$FLEETLENS_URL/pins"
-curl -X PATCH  "$FLEETLENS_URL/pins/eval-q4" -H "Authorization: Bearer $FLEETLENS_TOKEN" -d '{"days":5}'
-curl -X DELETE "$FLEETLENS_URL/pins/eval-q4" -H "Authorization: Bearer $FLEETLENS_TOKEN"
+curl -H "Authorization: Bearer $MIND1_TOKEN" "$MIND1_URL/pins"
+curl -X PATCH  "$MIND1_URL/pins/eval-q4" -H "Authorization: Bearer $MIND1_TOKEN" -d '{"days":5}'
+curl -X DELETE "$MIND1_URL/pins/eval-q4" -H "Authorization: Bearer $MIND1_TOKEN"
 ```
 
 If you do install the CLI, the base install is enough. The pin commands need none of the
 indexing toolchain, so no extras:
 
 ```bash
-pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git@v0.3.1#subdirectory=packages/fleetlens"
+pip install "mind1 @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
 ```
 
 ## Recording what you measured against
@@ -149,8 +149,8 @@ operator sets the policy once and nobody can opt out of it by asking for ten yea
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `FLEETLENS_RETAIN_PINNED_DAYS` | 30 | How long a new pin lives |
-| `FLEETLENS_PIN_EXTEND_MAX_DAYS` | 10 | The most one `extend` may add |
+| `MIND1_RETAIN_PINNED_DAYS` | 30 | How long a new pin lives |
+| `MIND1_PIN_EXTEND_MAX_DAYS` | 10 | The most one `extend` may add |
 
 `fl pin extend` pushes the expiry out, by up to the cap each time:
 
@@ -180,7 +180,7 @@ with people before removing theirs.
 
 **A handful of pins can be served at once.** Each open pin holds its enrichment vectors in
 memory, so the server caches a few and reopens the rest on demand, controlled by
-`FLEETLENS_MAX_OPEN_PINS`. The first semantic search against a pin that has just been opened
+`MIND1_MAX_OPEN_PINS`. The first semantic search against a pin that has just been opened
 takes a moment longer; after that it is as fast as the live index.
 
 **An alias that does not exist returns 404**, never a quiet fall back to the live index.

@@ -1,8 +1,8 @@
-# Contributing to fleetlens
+# Contributing to mind1
 
 Thanks for looking. The most useful contributions, in order:
 
-1. **A framework adapter.** Teach fleetlens to find routes or queues in a framework it
+1. **A framework adapter.** Teach mind1 to find routes or queues in a framework it
    doesn't know yet. Self-contained, no core changes.
 2. **A repo shape that confused a parser.** An issue with the code pattern that got missed
    is worth more than a bug report without one.
@@ -11,15 +11,15 @@ Thanks for looking. The most useful contributions, in order:
 ## Setup
 
 ```bash
-git clone https://github.com/tata1mg/fleetlens.git
-cd fleetlens
+git clone https://github.com/tata1mg/mind1.git
+cd mind1
 python -m venv .venv && source .venv/bin/activate
-pip install -e "packages/fleetlens[all]"
+pip install -e "packages/mind1[all]"
 npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
 ```
 
 ```bash
-cd packages/fleetlens && python -m pytest -q
+cd packages/mind1 && python -m pytest -q
 ```
 
 Tests are fast (well under a second) and hermetic. They build tiny repos in `tmp_path`
@@ -31,7 +31,7 @@ An adapter answers two questions about a repo: *does this framework appear here*
 interfaces does it expose*. It never touches the store, the resolver, or the MCP layer.
 
 ```python
-# packages/fleetlens/fleetlens/adapters/my_framework.py
+# packages/mind1/mind1/adapters/my_framework.py
 from .base import Interface, InterfaceAdapter, SkippedSite
 
 class MyFrameworkAdapter(InterfaceAdapter):
@@ -78,7 +78,7 @@ is real, in real code, and already isolated.
 
 **Stay generic.** Adapters describe *frameworks and libraries*, not individual codebases. If
 a rule would only ever fire on one company's repo, it belongs in the LLM gap-filler or a
-`fleetlens.yaml` declaration, not in an adapter. This keeps the core honest and portable.
+`mind1.yaml` declaration, not in an adapter. This keeps the core honest and portable.
 
 ## Writing a host resolver
 
@@ -93,7 +93,7 @@ class MyResolver:
         # ctx:     .slugs, .declared, .ports, .aliases
         ...
 
-from fleetlens.adapters import hosts
+from mind1.adapters import hosts
 hosts.HOST_RESOLVERS.insert(0, MyResolver())
 ```
 
@@ -103,7 +103,7 @@ config says `localhost:9402` and only the port identifies the service, while
 
 Resolvers must be conservative: a wrong answer invents a dependency that never existed, which
 is worse than no answer. Prefer whole-token matching over substrings, and return `None` for
-anything you are not sure about. The `hosts:` block in `fleetlens.yaml` exists so a human
+anything you are not sure about. The `hosts:` block in `mind1.yaml` exists so a human
 can settle the cases you decline.
 
 ## Conventions
@@ -114,7 +114,7 @@ can settle the cases you decline.
 - No network calls in the deterministic core.
 - Comments explain *why*, not *what*. Most code needs none.
 - `docs/tools.md` is generated. Change a tool's signature or docstring and regenerate it
-  with `python -m fleetlens.server.toolsdoc > docs/tools.md`, or CI will fail. A tool
+  with `python -m mind1.server.toolsdoc > docs/tools.md`, or CI will fail. A tool
   registered behind a new condition also needs an entry in `toolsdoc.AVAILABILITY`.
 
 ## Pull requests

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+fleetlens is now mind1. This is a hard rename with no compatibility aliases.
+
+### Upgrading
+
+- The package, import name and PyPI distribution are `mind1`. Update install pins and
+  `from fleetlens...` imports.
+- The MCP server is named `mind1`, so tool names change from `mcp__fleetlens__*` to
+  `mcp__mind1__*`. Update `.mcp.json` entries and tool allowlists.
+- Every `FLEETLENS_*` environment variable is now `MIND1_*` (for example `MIND1_HOME`,
+  `MIND1_TOKEN`, `MIND1_URL`). The old names are ignored.
+- `fleetlens.yaml` and `fleetlens.json` manifests are now `mind1.yaml` and `mind1.json`,
+  and `.fleetlensignore` is now `.mind1ignore`. Rename them in each repository.
+- The default data directory and `fleetlens.db` index are now under `mind1`. Re-index, or
+  move the old directory by hand.
+- The `fl`, `fl-symbols` and `fl-callgraph` commands are unchanged.
+
 ## 0.3.1
 
 `get_source` could not read a single symbol in a library.
