@@ -58,7 +58,7 @@ def test_create_makes_a_readable_independent_snapshot(tmp_path):
 
 
 def test_later_writes_to_the_source_do_not_reach_the_snapshot(tmp_path):
-    """Guards the hardlink mistake: fl index writes in place and would edit the pin."""
+    """Guards the hardlink mistake: mind1 index writes in place and would edit the pin."""
     db, live = _live(tmp_path)
     ps = _store(tmp_path)
     ps.create(str(db), "p", "", "")

@@ -306,7 +306,7 @@ def test_two_routes_collapsing_onto_one_path_are_recorded(tmp_path):
     """Only one route can serve a path, so a genuine repeat collapses either way. What must
     not happen is it collapsing silently: when a path bug makes two different endpoints land
     together, the second used to vanish without a trace. The surviving interface now carries
-    both source lines and the collision is a skipped site `fl doctor` can report.
+    both source lines and the collision is a skipped site `mind1 doctor` can report.
     """
     from mind1.adapters.registry import discover_interfaces
 

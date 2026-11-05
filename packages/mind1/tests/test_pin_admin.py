@@ -35,7 +35,7 @@ def client(tmp_path):
     st.stamp_build({})
     st.commit()
     st.close()
-    st = SqliteStore(str(db), read_only=True)     # as `fl serve --http` opens it
+    st = SqliteStore(str(db), read_only=True)     # as `mind1 serve --http` opens it
     store = PinStore(PinPolicy(tmp_path / "pins"))
 
     async def healthz(_request):

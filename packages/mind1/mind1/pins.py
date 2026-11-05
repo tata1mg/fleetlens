@@ -66,7 +66,7 @@ def _positive_int_env(name: str, default: int) -> int:
     except ValueError:
         value = 0
     if value < 1:
-        raise SystemExit(f"fl serve: ${name} must be a positive whole number, got {raw!r}.")
+        raise SystemExit(f"mind1 serve: ${name} must be a positive whole number, got {raw!r}.")
     return value
 
 
@@ -173,7 +173,7 @@ class PinStore:
         hardlink. A copy of a database that a build is writing can capture a torn state.
         VACUUM INTO reads through SQLite, so it sees one consistent transaction, writes a
         compacted file, and needs only read access to the source. A hardlink is worse
-        than a copy: `fl index` and `fl enrich` write the database in place, so the "pin"
+        than a copy: `mind1 index` and `mind1 enrich` write the database in place, so the "pin"
         would silently absorb every later edit and stop being a snapshot at all.
         """
         self._check_alias(alias)
@@ -322,5 +322,5 @@ def check_pins_dir(db_path, pins_dir) -> None:
     """
     db, d = Path(db_path).resolve(), Path(pins_dir).resolve()
     if d == db.parent or d in db.parents:
-        raise SystemExit(f"fl serve: --pins-dir {d} contains the live index {db}. "
+        raise SystemExit(f"mind1 serve: --pins-dir {d} contains the live index {db}. "
                          "Use a separate directory for pins.")

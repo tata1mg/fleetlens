@@ -126,7 +126,7 @@ def register(mcp, ctx: ServiceContext) -> None:
                         "reason": "this service was indexed before dependencies and "
                                   "languages were recorded, so no rule can be matched "
                                   "against it",
-                        "fix": "re-index it (`fl index <repo>`), then ask again",
+                        "fix": "re-index it (`mind1 index <repo>`), then ask again",
                         "rules": []}
             rules = governing(store, f"service:{slug}")
             if not want_titles:

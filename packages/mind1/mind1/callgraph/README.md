@@ -37,7 +37,7 @@ edges) before re-inserting.
 
 ## Toolchain
 
-- **`build-callgraph`** (`mind1[callgraph]`) — runs the SCIP indexer + emits
+- **`mind1-callgraph`** (`mind1[callgraph]`) — runs the SCIP indexer + emits
   `.context/callgraph.json`. Needs tree-sitter (the symbol index) and the language's SCIP
   indexer CLI on PATH.
 - **SCIP reader** — dependency-free (`scip_reader.py`): decodes only the handful of

@@ -3,7 +3,7 @@
 
 Measures what an agent actually experiences: the official MCP client over streamable HTTP,
 including transport and session overhead, against a running server. Not a microbenchmark of
-the store — `fl index --stats` covers that.
+the store — `mind1 index --stats` covers that.
 
 Two classes of tool, reported apart because their latencies differ by orders of magnitude
 and averaging them would hide both:
@@ -261,7 +261,7 @@ def markdown(report: dict) -> str:
     if not report.get("semantic_available"):
         out += ["", "Semantic tools were not exposed by this server, so they are not "
                     "measured here. They are registered only when an embedding model is "
-                    "configured (`fl serve --embed-model ...`)."]
+                    "configured (`mind1 serve --embed-model ...`)."]
     errs = sum(r["errors"] for r in report["rows"])
     out += ["", f"{sum(r['calls'] for r in report['rows'])} calls, {errs} errors."]
     return "\n".join(out)

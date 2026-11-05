@@ -1,4 +1,4 @@
-"""`build-symbols` — write a repo's symbol index to .context/_symbols.json.
+"""`mind1-symbols` — write a repo's symbol index to .context/_symbols.json.
 
 Deterministic, no AI. Run at index time (before diff-based regeneration) so the next
 run can tell exactly which symbols changed. Exit codes: 0 ok, 2 usage/error.
@@ -14,7 +14,7 @@ from .indexer import build_index
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="build-symbols")
+    ap = argparse.ArgumentParser(prog="mind1-symbols")
     ap.add_argument("repo", nargs="?", default=".", help="repo root to index (default: .)")
     ap.add_argument("-o", "--output", default=None,
                     help="output path (default: <repo>/.context/_symbols.json)")
@@ -24,12 +24,12 @@ def main(argv: list[str] | None = None) -> int:
 
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
-        print(f"build-symbols: not a directory: {repo}", file=sys.stderr)
+        print(f"mind1-symbols: not a directory: {repo}", file=sys.stderr)
         return 2
     try:
         index = build_index(repo)
     except ImportError:
-        print("build-symbols: tree-sitter not installed — "
+        print("mind1-symbols: tree-sitter not installed — "
               "pip install 'mind1[symbols]'", file=sys.stderr)
         return 2
 
@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(payload, encoding="utf-8")
         if not args.quiet:
-            print(f"build-symbols: {index['symbol_count']} symbols "
+            print(f"mind1-symbols: {index['symbol_count']} symbols "
                   f"in {index['file_count']} files -> {out}")
     return 0
 

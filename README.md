@@ -79,27 +79,27 @@ because indexing writes a `.context/` directory into each one. And a Python repo
 needs its **virtualenv present**, because `scip-python` resolves imports through the
 installed packages and without them the call graph for that repository comes back empty.
 
-`fl doctor` checks the toolchain, and `fl doctor /path/to/repo` checks one repository
+`mind1 doctor` checks the toolchain, and `mind1 doctor /path/to/repo` checks one repository
 against it. Run it before the first index: it catches most of the above.
 
 Index a folder of service repos into one shared SQLite file, then serve it:
 
 ```bash
-fl doctor
-fl index-all /path/to/your/services --db "$PWD/mind1.db"
-fl serve --db "$PWD/mind1.db"
+mind1 doctor
+mind1 index-all /path/to/your/services --db "$PWD/mind1.db"
+mind1 serve --db "$PWD/mind1.db"
 ```
 
 Point your MCP client at it over stdio. On Claude Code that is one command, and `which`
 and `$PWD` fill in the two paths for you:
 
 ```bash
-claude mcp add mind1 -- "$(which fl)" serve --db "$PWD/mind1.db"
+claude mcp add mind1 -- "$(which mind1)" serve --db "$PWD/mind1.db"
 ```
 
 Any other client wants the same thing as JSON. Use absolute paths for both the executable
-and the index: the client starts `fl` in a working directory of its own choosing, and it
-does not read your shell's `PATH`, so a relative `--db` and a bare `fl` are the two things
+and the index: the client starts `mind1` in a working directory of its own choosing, and it
+does not read your shell's `PATH`, so a relative `--db` and a bare `mind1` are the two things
 that most often turn a working index into an agent that reports no services.
 
 ```json
@@ -116,7 +116,7 @@ that most often turn a working index into an agent that reports no services.
 Now ask your agent what the orders service exposes, or what breaks if you change
 `POST /orders`. It answers from the graph instead of guessing.
 
-To share one index with a team, `fl serve --http` serves the same tools over
+To share one index with a team, `mind1 serve --http` serves the same tools over
 streamable-HTTP behind a shared bearer token, with the index opened read-only. See
 [docs/deployment.md](docs/deployment.md).
 
@@ -124,9 +124,9 @@ streamable-HTTP behind a shared bearer token, with the index opened read-only. S
 <summary>Other commands</summary>
 
 ```bash
-fl index /path/to/repo --db mind1.db     # a single repo instead of a fleet
-fl resolve --db mind1.db                 # recompute cross-repo edges
-fl export-graph --db mind1.db -o mesh.html   # self-contained HTML render, no server
+mind1 index /path/to/repo --db mind1.db     # a single repo instead of a fleet
+mind1 resolve --db mind1.db                 # recompute cross-repo edges
+mind1 export-graph --db mind1.db -o mesh.html   # self-contained HTML render, no server
 ```
 </details>
 
@@ -150,7 +150,7 @@ fl export-graph --db mind1.db -o mesh.html   # self-contained HTML render, no se
 
 Parameters, defaults and the conditions under which each tool is registered are in
 [docs/tools.md](docs/tools.md), generated from the server's own registrations. Four of the
-fifteen are conditional, so a default `fl serve` advertises ten.
+fifteen are conditional, so a default `mind1 serve` advertises ten.
 
 ---
 
@@ -170,7 +170,7 @@ an agent may still word things differently run to run, but it is no longer readi
 different fleet.
 
 ```bash
-fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+mind1 pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 # pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
 ```
 
@@ -180,7 +180,7 @@ http://mind1.internal:8081/pins/eval-q4/mcp  # that snapshot, until it expires
 ```
 
 Same tools, same token, same indexed context, and an alias that does not exist returns 404 rather
-than quietly falling back to the live index. `fl pin list`, `fl pin extend` and `fl unpin`
+than quietly falling back to the live index. `mind1 pin list`, `mind1 pin extend` and `mind1 unpin`
 manage them, and all four are a thin convenience over plain HTTP on the same port, so curl
 works just as well from CI.
 
@@ -190,7 +190,7 @@ at, through `get_index_info`, so a measurement stays attributable after the pin 
 
 ### The graph as a file, with no server
 
-`fl export-graph` writes the whole dependency graph to a self-contained HTML file. Nothing to
+`mind1 export-graph` writes the whole dependency graph to a self-contained HTML file. Nothing to
 install and nothing to run for whoever opens it, which is usually the point when the audience
 is a review or an architecture discussion rather than an agent.
 
@@ -205,7 +205,7 @@ validate, in what order does it call its dependencies, which branch returns the 
 are chasing.
 
 ```bash
-MIND1_EXPOSE_SOURCE=1 fl serve --http --host 0.0.0.0
+MIND1_EXPOSE_SOURCE=1 mind1 serve --http --host 0.0.0.0
 ```
 
 ```
@@ -324,7 +324,7 @@ to `.context/skipped.json`.
 
 ```bash
 ollama pull qwen2.5-coder:7b
-fl index <repo> --db mind1.db --fill-gaps   # resolve those sites, and only those
+mind1 index <repo> --db mind1.db --fill-gaps   # resolve those sites, and only those
 ```
 
 Each site gets the snippet plus the definitions it references, and every answer is
@@ -342,12 +342,12 @@ work too (`--provider openai`), and those do send code to an API, which is why t
 ```bash
 ollama pull bge-m3            # embeddings
 ollama pull qwen2.5-coder:7b  # summaries
-fl enrich --db mind1.db                       # summaries + embeddings, only what changed
-fl serve  --db mind1.db --embed-model bge-m3  # enables discover_* tools
+mind1 enrich --db mind1.db                       # summaries + embeddings, only what changed
+mind1 serve  --db mind1.db --embed-model bge-m3  # enables discover_* tools
 ```
 
-`fl enrich` writes both summaries and embeddings by default, so it needs both models and
-exits with an error if either is missing. `fl enrich --pull` fetches whatever is absent.
+`mind1 enrich` writes both summaries and embeddings by default, so it needs both models and
+exits with an error if either is missing. `mind1 enrich --pull` fetches whatever is absent.
 To skip the summaries and index embeddings alone, pass `--kinds` without them.
 </details>
 
@@ -387,7 +387,7 @@ network, so listing one as a service invents a node nobody deploys, hands it wha
 its examples and its own health blueprint happen to declare, and makes "which services are
 unused" unreadable.
 
-With the semantic tier, `fl enrich` summarises each library from its README and the code it
+With the semantic tier, `mind1 enrich` summarises each library from its README and the code it
 exports, and `discover_libraries` finds it by what it provides ("retry with backoff"), so a
 helper that already exists turns up before someone writes it again.
 
@@ -442,7 +442,7 @@ there is no UI, because the reader is an agent.
 
 ## What it can't do yet
 
-Completeness is not claimed. Gaps are reported instead: `fl index` prints an unresolved-site
+Completeness is not claimed. Gaps are reported instead: `mind1 index` prints an unresolved-site
 count on every run, and `.context/skipped.json` lists each one.
 
 What a language supports differs by capability, so the matrix below is split by capability
@@ -494,7 +494,7 @@ The LLM tiers are the only path that can send anything anywhere. They are off by
 with Ollama they stay on your hardware. With `--provider openai` they do not: prompts carry
 endpoint paths, handler names and docstrings.
 
-`fl serve --http` is protected by one shared bearer token and offers no TLS, no per-user
+`mind1 serve --http` is protected by one shared bearer token and offers no TLS, no per-user
 identity and no rotation without a restart. Run it on a private network.
 
 ### What `MIND1_EXPOSE_SOURCE` costs you

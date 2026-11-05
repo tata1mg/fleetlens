@@ -58,7 +58,7 @@ jobs:
       - name: Install with no extras
         run: pip install packages/mind1 pytest
       - name: Commands start
-        run: fl --help > /dev/null && fl pin --help > /dev/null
+        run: mind1 --help > /dev/null && mind1 pin --help > /dev/null
       - name: Importing the CLI does not load the server stack
         run: |
           python -c "
@@ -126,9 +126,9 @@ jobs:
               && git -C "sample/$r" -c user.email=ci@example.com -c user.name=ci commit -qm init
           done
 
-          docker run --rm -v "$PWD/sample:/repos" -v fl-ci:/data \
+          docker run --rm -v "$PWD/sample:/repos" -v mind1-ci:/data \
             mind1:ci index-all /repos
-          docker run -d --name fl-serve -p 8081:8081 -v fl-ci:/data \
+          docker run -d --name mind1-serve -p 8081:8081 -v mind1-ci:/data \
             -e MIND1_TOKEN=ci-token mind1:ci serve --http --host 0.0.0.0
           for i in $(seq 1 30); do
             curl -sf http://localhost:8081/healthz > /dev/null && break || sleep 1
@@ -142,7 +142,7 @@ jobs:
 
           echo "unauthenticated request must be rejected"
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/mcp)
-          test "$code" = "401" || { echo "expected 401, got $code"; docker logs fl-serve; exit 1; }
+          test "$code" = "401" || { echo "expected 401, got $code"; docker logs mind1-serve; exit 1; }
 
           echo "pin admin routes: create, list, and 401 without a token"
           auth="Authorization: Bearer ci-token"
@@ -152,7 +152,7 @@ jobs:
           echo "$listing"
           echo "$listing" | python3 -c 'import json,sys; p=json.load(sys.stdin)["pins"]; assert [x["alias"] for x in p]==["ci-pin"] and p[0]["expires_at"]'
           code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8081/pins)
-          test "$code" = "401" || { echo "expected 401 on /pins, got $code"; docker logs fl-serve; exit 1; }
+          test "$code" = "401" || { echo "expected 401 on /pins, got $code"; docker logs mind1-serve; exit 1; }
 
       # The part the rest of this job cannot reach: the MCP protocol itself, and whether
       # the answer is correct rather than merely successful. Runs against the live index
@@ -184,4 +184,4 @@ jobs:
 
       - name: Server logs
         if: always()
-        run: docker logs fl-serve || true
+        run: docker logs mind1-serve || true

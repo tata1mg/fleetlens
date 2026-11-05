@@ -66,7 +66,7 @@ def resolve_token(token_env: str, allow_insecure: bool) -> str:
                     "this port can read the whole index.")
         return ""
     raise SystemExit(
-        f"fl serve --http: no token in ${token_env}.\n"
+        f"mind1 serve --http: no token in ${token_env}.\n"
         f"  Set one:       export {token_env}=$(openssl rand -hex 32)\n"
         f"  Or, for a local trial only, pass --insecure to serve without auth.")
 
@@ -153,7 +153,7 @@ def serve(mcp, host: str, port: int, token: str, store, db_path: str, pins,
     try:
         import uvicorn
     except ImportError:  # pragma: no cover
-        raise SystemExit("fl serve --http: uvicorn not installed — "
+        raise SystemExit("mind1 serve --http: uvicorn not installed — "
                          "pip install 'mind1[server]'")
     from starlette.responses import JSONResponse
     from starlette.routing import Route

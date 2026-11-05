@@ -1,11 +1,11 @@
-"""`fl`, the one command for mind1.
+"""`mind1`, the one command for mind1.
 
-    fl doctor     [repo]                                      # check the setup
-    fl index      <repo>  [--db DB] [--slug NAME] [-l LANG]   # one repo
-    fl index-all  <dir>   [--db DB] [-l LANG]                 # a folder of service repos
-    fl serve              [--db DB] [--http]                  # run the MCP server (stdio, or HTTP for a team)
-    fl pin create --as ALIAS [--reason R]                     # freeze the served index as a named snapshot
-    fl pin list | extend ALIAS --days N | delete ALIAS        # manage snapshots (also: fl unpin ALIAS)
+    mind1 doctor     [repo]                                      # check the setup
+    mind1 index      <repo>  [--db DB] [--slug NAME] [-l LANG]   # one repo
+    mind1 index-all  <dir>   [--db DB] [-l LANG]                 # a folder of service repos
+    mind1 serve              [--db DB] [--http]                  # run the MCP server (stdio, or HTTP for a team)
+    mind1 pin create --as ALIAS [--reason R]                     # freeze the served index as a named snapshot
+    mind1 pin list | extend ALIAS --days N | delete ALIAS        # manage snapshots (also: mind1 unpin ALIAS)
 
 Deterministic core: no LLM, no API key. The DB is a single SQLite file (default
 ./mind1.db) shared across all indexed repos. That shared DB is what makes the graph
@@ -221,7 +221,7 @@ def _progress_printer():
             line = f"  {d['slug']}: gap {d['i']}/{d['n']} ({d['resolved']} resolved)"
         elif event == "repo-done":
             wipe()
-            # Results on stdout, as the end-of-run table was, so `fl index-all > repos.txt`
+            # Results on stdout, as the end-of-run table was, so `mind1 index-all > repos.txt`
             # still collects them and the progress chatter still goes to the terminal.
             print(_repo_row(d, at["i"], at["n"]), flush=True)
             return
@@ -246,11 +246,11 @@ def _progress_printer():
 def _cmd_index(args) -> int:
     repo = Path(args.repo)
     if not repo.is_dir():
-        print(f"fl index: not a directory: {repo}", file=sys.stderr)
+        print(f"mind1 index: not a directory: {repo}", file=sys.stderr)
         return 2
     llm = None
     if args.fill_gaps:
-        built = _build_llm(args, "fl index", need_embed=False)
+        built = _build_llm(args, "mind1 index", need_embed=False)
         if built is None:
             return 2
         llm = built[0]
@@ -267,38 +267,38 @@ def _cmd_index(args) -> int:
                                  llm=llm, progress=prog)
         prog.done()
     except RuntimeError as exc:  # ProviderError is a RuntimeError too
-        print(f"fl index: {exc}", file=sys.stderr)
+        print(f"mind1 index: {exc}", file=sys.stderr)
         return 2
     finally:
         store.close()
     for s in results:
         if s.get("guidance"):
             g = s["guidance"]
-            print(f"fl index: {s['slug']} -> {args.db}  ({g['loaded']} guidance rules"
+            print(f"mind1 index: {s['slug']} -> {args.db}  ({g['loaded']} guidance rules"
                   + (f", {g['removed']} withdrawn" if g.get("removed") else "")
                   + "; declared in mind1.yaml, so no service node and no symbols)")
             for problem in g["problems"]:
                 print(f"  {problem}", file=sys.stderr)
             continue
         if s.get("library"):
-            print(f"fl index: {s['slug']} -> {args.db}  "
+            print(f"mind1 index: {s['slug']} -> {args.db}  "
                   f"({s['nodes']} symbols, {s['edges']} calls; library, so no service "
                   f"node and no interfaces)")
             continue
-        print(f"fl index: {s['slug']} -> {args.db}  "
+        print(f"mind1 index: {s['slug']} -> {args.db}  "
               f"({s['nodes']} symbols, {s['edges']} calls, "
               f"{s['interfaces']} interfaces, {s['handled_by']} handled_by"
               + (f", {s['skipped']} unresolved sites" if s.get("skipped") else "")
               + (f", {s['unreadable']} UNREADABLE file(s)" if s.get("unreadable") else "")
               + (", NO call graph" if s.get("call_graph") == "unavailable" else "") + ")")
         if s.get("call_graph") == "unavailable":
-            print(f"fl index: {s['slug']} indexed without a call graph; interfaces and "
+            print(f"mind1 index: {s['slug']} indexed without a call graph; interfaces and "
                   f"cross-repo edges are present, callers/callees are not. "
-                  f"`fl doctor {args.repo}` reports why.", file=sys.stderr)
+                  f"`mind1 doctor {args.repo}` reports why.", file=sys.stderr)
         if s.get("gaps"):
-            print(f"fl index: {s['slug']} gaps — {_gap_line(s['gaps'])}")
+            print(f"mind1 index: {s['slug']} gaps — {_gap_line(s['gaps'])}")
     if len(results) > 1:
-        print(f"fl index: {len(results)} services from one repo (via manifest)")
+        print(f"mind1 index: {len(results)} services from one repo (via manifest)")
     if stats is not None:
         print("\nfl index: where the time went\n")
         print(stats.render(files=_count_sources(repo)))
@@ -308,11 +308,11 @@ def _cmd_index(args) -> int:
 def _cmd_index_all(args) -> int:
     base = Path(args.dir)
     if not base.is_dir():
-        print(f"fl index-all: not a directory: {base}", file=sys.stderr)
+        print(f"mind1 index-all: not a directory: {base}", file=sys.stderr)
         return 2
     llm = None
     if args.fill_gaps:
-        built = _build_llm(args, "fl index-all", need_embed=False)
+        built = _build_llm(args, "mind1 index-all", need_embed=False)
         if built is None:
             return 2
         llm = built[0]
@@ -333,13 +333,13 @@ def _cmd_index_all(args) -> int:
         store.close()
     partial = sum(1 for s in res["ok"] if s.get("call_graph") == "unavailable")
     note = f", {partial} without a call graph" if partial else ""
-    print(f"fl index-all: {len(res['ok'])}/{res['considered']} indexed into {args.db} "
+    print(f"mind1 index-all: {len(res['ok'])}/{res['considered']} indexed into {args.db} "
           f"({len(res['failed'])} skipped{note}) | {r['edges']} cross-repo edges "
           f"({r['async_edges']} async)")
-    _guidance_report(res.get("guidance"), "fl index-all")
+    _guidance_report(res.get("guidance"), "mind1 index-all")
     if partial:
         print(f"  {partial} repo(s) indexed without a call graph, so get_callers/get_callees "
-              f"will be empty for them. Run `fl doctor <repo>` to see why.", file=sys.stderr)
+              f"will be empty for them. Run `mind1 doctor <repo>` to see why.", file=sys.stderr)
     return 0
 
 
@@ -360,7 +360,7 @@ def _cmd_resolve(args) -> int:
         r = resolve(store, store, store)
     finally:
         store.close()
-    print(f"fl resolve: {r['edges']} service->service edges, {r['async_edges']} of them async "
+    print(f"mind1 resolve: {r['edges']} service->service edges, {r['async_edges']} of them async "
           f"({r['services']} services, {r['unresolved_calls']} outbound calls unresolved)")
     return 0
 
@@ -372,7 +372,7 @@ def _cmd_export_graph(args) -> int:
     finally:
         store.close()
     Path(args.output).write_text(html, encoding="utf-8")
-    print(f"fl export-graph: wrote {args.output}")
+    print(f"mind1 export-graph: wrote {args.output}")
     return 0
 
 
@@ -385,13 +385,13 @@ def _cmd_enrich(args) -> int:
     unknown = [k for k in kinds if k not in (*KINDS, "gaps", "guidance")]
     if unknown:
         # An unknown kind lists no objects, so the run would succeed having done nothing.
-        print(f"fl enrich: unknown kind(s) {', '.join(unknown)}; choose from "
+        print(f"mind1 enrich: unknown kind(s) {', '.join(unknown)}; choose from "
               f"{', '.join(KINDS)}, guidance, gaps", file=sys.stderr)
         return 2
     summary_kinds = tuple(k for k in kinds if k not in ("gaps", "guidance"))
     # Guidance is embedded as authored and never summarised, so a run that only does
     # guidance needs an embedder and no generation model at all.
-    built = _build_llm(args, "fl enrich",
+    built = _build_llm(args, "mind1 enrich",
                        need_embed=bool(summary_kinds) or "guidance" in kinds,
                        need_llm=bool(summary_kinds) or "gaps" in kinds)
     if built is None:
@@ -404,18 +404,18 @@ def _cmd_enrich(args) -> int:
             prog = _progress_printer()
             g = fill_gaps(store, llm, only_slug=args.service or None, progress=prog)
             prog.done()
-            print(f"fl enrich: gaps — {g['sites']} skipped sites: {_gap_line(g)}, "
+            print(f"mind1 enrich: gaps — {g['sites']} skipped sites: {_gap_line(g)}, "
                   f"{g['skipped']} already done")
             if g["outbound"] or g["interfaces"]:
                 r = resolve(store, store, store)
-                print(f"fl enrich: re-resolved fleet — {r['edges']} service->service edges "
+                print(f"mind1 enrich: re-resolved fleet — {r['edges']} service->service edges "
                       f"({r['async_edges']} async)")
         if "guidance" in kinds:
             # No LLM call: a rule arrives already written by the person who meant it, so it
             # is embedded as authored rather than paraphrased.
             from .guidance import embed_guidance
             g = embed_guidance(store, embedder)
-            print(f"fl enrich: guidance — {g['embedded']} embedded, "
+            print(f"mind1 enrich: guidance — {g['embedded']} embedded, "
                   f"{g['skipped']} unchanged ({g['model']})")
         if summary_kinds:
             eprog = _enrich_printer()
@@ -432,7 +432,7 @@ def _cmd_enrich(args) -> int:
                       file=sys.stderr)
                 return 2
             eprog.done()
-            print(f"fl enrich: {r['generated']} enriched, {r['skipped']} unchanged "
+            print(f"mind1 enrich: {r['generated']} enriched, {r['skipped']} unchanged "
                   f"(model={r['model']}, kinds={','.join(summary_kinds)})")
     finally:
         store.close()
@@ -478,18 +478,18 @@ def _cmd_serve(args) -> int:
         import importlib.util
         failed = (exc.name or "").split(".")[0]
         if importlib.util.find_spec("mcp") is None:
-            print("fl serve: MCP is not installed.\n"
+            print("mind1 serve: MCP is not installed.\n"
                   "  pip install 'mind1[server]'", file=sys.stderr)
         elif failed and failed != "mcp":
             # mcp is here, but something it depends on is missing or too old. The classic
             # is pydantic v1 in the environment, where `TypeAdapter` does not exist.
-            print(f"fl serve: MCP is installed, but importing it failed on '{failed}'.\n"
+            print(f"mind1 serve: MCP is installed, but importing it failed on '{failed}'.\n"
                   f"  {exc}\n"
                   f"  That is a dependency problem, not an MCP version problem. Try:\n"
                   f"    pip install -U '{failed}'      and then      pip check",
                   file=sys.stderr)
         else:
-            print(f"fl serve: the installed MCP is not compatible.\n"
+            print(f"mind1 serve: the installed MCP is not compatible.\n"
                   f"  {exc}\n"
                   "  mind1 needs mcp>=1.2.0,<2.0; 2.0 removed mcp.server.fastmcp.\n"
                   "  pip install 'mcp>=1.2.0,<2.0'", file=sys.stderr)
@@ -506,14 +506,14 @@ def _cmd_serve(args) -> int:
     # Refuse an index that is not there, rather than creating it. Only --http opens the
     # store read-only, so without this check stdio would take a mistyped or
     # wrongly-resolved --db as an instruction to create an empty database and then answer
-    # every question with zero services. An MCP client starts `fl serve` in a working
+    # every question with zero services. An MCP client starts `mind1 serve` in a working
     # directory of its own choosing, so a relative --db that was right in the shell is
     # routinely wrong here, and a silent empty index reads as "mind1 found nothing"
     # rather than as a setup mistake.
     db_path = Path(args.db).expanduser()
     if args.db != ":memory:" and not db_path.exists():
-        print(f"fl serve: no index at {db_path}\n"
-              f"  build one first:  fl index-all <dir> --db {db_path}\n"
+        print(f"mind1 serve: no index at {db_path}\n"
+              f"  build one first:  mind1 index-all <dir> --db {db_path}\n"
               f"  or point --db at an existing index (an absolute path is safest here,\n"
               f"  because an MCP client chooses the working directory, not you).",
               file=sys.stderr)
@@ -593,14 +593,14 @@ def _pin_run(args, fn) -> int:
     `fn(pin_client, url, token)` returns (response, line to print). 0 on success, 1 when
     the server refused (its message is printed), 2 when there was no server to ask. The pin
     client is imported here, not at the top, so every other command starts without it and
-    `fl pin` starts without the server stack.
+    `mind1 pin` starts without the server stack.
     """
     from . import pin_client
     try:
         url, token = pin_client.resolve_connection(args.url, args.token)
         out, line = fn(pin_client, url, token)
     except pin_client.ClientError as exc:
-        print(f"fl pin: {exc.message}", file=sys.stderr)
+        print(f"mind1 pin: {exc.message}", file=sys.stderr)
         return 1 if exc.status is not None else 2
     note = pin_client.newer_server_note(out)
     if note:
@@ -646,9 +646,9 @@ def _pin_args(p) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="fl", description=__doc__,
+    ap = argparse.ArgumentParser(prog="mind1", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    # Imported here rather than at module scope: `fl --version` must work on a base install,
+    # Imported here rather than at module scope: `mind1 --version` must work on a base install,
     # and the point of the client-base-install CI job is that importing the CLI pulls in
     # nothing heavy.
     from . import __version__

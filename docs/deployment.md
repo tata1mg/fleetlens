@@ -16,12 +16,12 @@ engineer indexing the same repositories on their own machine.
 No deployment, no token, no container.
 
 ```bash
-fl index-all /path/to/your/repos --db "$PWD/mind1.db"
+mind1 index-all /path/to/your/repos --db "$PWD/mind1.db"
 ```
 
 Absolute paths in the client config, for both the executable and the index. The client
-starts `fl` in a working directory of its own and without your shell's `PATH`, so a
-relative `--db` points somewhere else and a bare `fl` may not be found at all.
+starts `mind1` in a working directory of its own and without your shell's `PATH`, so a
+relative `--db` points somewhere else and a bare `mind1` may not be found at all.
 
 ```json
 {
@@ -176,7 +176,7 @@ so no client ever reads a half-written index, and **the running server notices t
 file and reopens it on the next request**. There is no restart and no downtime.
 
 ```bash
-fl index-all "$MIND1_REPOS" --db "$MIND1_HOME/data/mind1.db.new" && mv "$MIND1_HOME/data/mind1.db.new" "$MIND1_HOME/data/mind1.db"
+mind1 index-all "$MIND1_REPOS" --db "$MIND1_HOME/data/mind1.db.new" && mv "$MIND1_HOME/data/mind1.db.new" "$MIND1_HOME/data/mind1.db"
 ```
 
 Under Docker the same thing is `docker compose run --rm index`, which already does the
@@ -225,7 +225,7 @@ The index is only as current as the working copies it read.
 
 ## Pinning an index
 
-`fl pin` freezes the served index as a named snapshot for a repeatable evaluation. The
+`mind1 pin` freezes the served index as a named snapshot for a repeatable evaluation. The
 commands and the full guide are in [pinning.md](pinning.md).
 
 The server needs a writable directory for the snapshots: `pins/` next to the index by

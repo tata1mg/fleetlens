@@ -17,8 +17,8 @@ from .base import ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
 from .models import STUB_SOURCE, KnowledgeObject, Relationship, make_stub_object
 
 # numpy is optional and only the semantic tier benefits. It is resolved on first use, not at
-# import, because this module is imported by every `fl` command and numpy is slow to load;
-# `fl pin` in particular must work on an install that has none of the extras. None means
+# import, because this module is imported by every `mind1` command and numpy is slow to load;
+# `mind1 pin` in particular must work on an install that has none of the extras. None means
 # "known absent" and is also what the fallback test sets.
 _UNRESOLVED = object()
 _np = _UNRESOLVED
@@ -291,7 +291,7 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         issue: two builds inside one minute (a scripted re-index, a test) must stay
         distinguishable, or a pin could name the wrong one.
 
-        SHAs are merged into the stored map rather than replacing it, because `fl index
+        SHAs are merged into the stored map rather than replacing it, because `mind1 index
         <one repo>` knows about one repository and must not erase the others. A repo that
         now has no SHA (no longer a git checkout) loses its own entry, and only its own.
         """

@@ -233,7 +233,7 @@ def test_context_falls_back_to_textual_definitions(tmp_path):
 
 
 def test_index_repo_fills_gaps_when_llm_given(tmp_path, monkeypatch):
-    """`fl index --fill-gaps`: gaps are resolved as part of indexing, so a re-index never
+    """`mind1 index --fill-gaps`: gaps are resolved as part of indexing, so a re-index never
     silently drops LLM-resolved interfaces. Call-graph build is stubbed (SCIP is covered
     elsewhere)."""
     from mind1 import indexing

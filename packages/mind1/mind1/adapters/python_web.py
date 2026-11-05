@@ -26,7 +26,7 @@ Coverage of framework idioms can never be complete, so the adapter does not pret
 otherwise. Anything in a framework file that carries a URL-shaped literal and that none of
 the above claimed is recorded as an `unrecognised-route-registration` skipped site. That
 keeps the failure mode visible: a route mind1 cannot parse is counted and can be
-resolved by the LLM tier, rather than quietly missing. `fl doctor <repo>` reports the split.
+resolved by the LLM tier, rather than quietly missing. `mind1 doctor <repo>` reports the split.
 
 Prefixes are resolved across the repository, because a router is nearly always mounted in
 a different file from the one declaring its routes; see `_mounts.py`.
@@ -467,7 +467,7 @@ class PythonWebAdapter(InterfaceAdapter):
         A file that fails to parse counts. Deciding from the readable files alone is how a
         service whose only route module used pre-3.7 syntax indexed with no interfaces and
         no skipped sites: this said no, `discover` never ran, and the `unparseable-file`
-        record it would have written, which is what `fl doctor` reports, never existed.
+        record it would have written, which is what `mind1 doctor` reports, never existed.
         """
         for p in _iter_py(repo):
             _, tree = read_and_parse(p)

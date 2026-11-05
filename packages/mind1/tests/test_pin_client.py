@@ -1,4 +1,4 @@
-"""`fl pin` against a fake admin server. Stdlib only: this file runs on a base install."""
+"""`mind1 pin` against a fake admin server. Stdlib only: this file runs on a base install."""
 from __future__ import annotations
 
 import json
@@ -195,7 +195,7 @@ def test_token_never_appears_in_output(fake, capsys):
 
 
 def test_pin_help_does_not_load_the_server_stack():
-    """`pip install mind1` with no extras must be enough for `fl pin`."""
+    """`pip install mind1` with no extras must be enough for `mind1 pin`."""
     code = (
         "import sys\n"
         "import mind1.cli as c\n"

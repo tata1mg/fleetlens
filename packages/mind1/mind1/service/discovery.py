@@ -22,7 +22,7 @@ class DiscoveryService:
     def discover(self, query: str, object_type: str, limit: int = 5) -> dict[str, Any]:
         if self.embedder is None:
             return {"status": "unavailable",
-                    "reason": "semantic search needs an embedding model — run `fl enrich` "
+                    "reason": "semantic search needs an embedding model — run `mind1 enrich` "
                               "and start the server with --embed-model"}
         vec = self.embedder.embed([query])[0]
         hits = self.semantic.search(vec, object_type, self.embedder.model, limit)

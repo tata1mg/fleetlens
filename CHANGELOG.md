@@ -16,7 +16,9 @@ fleetlens is now mind1. This is a hard rename with no compatibility aliases.
   and `.fleetlensignore` is now `.mind1ignore`. Rename them in each repository.
 - The default data directory and `fleetlens.db` index are now under `mind1`. Re-index, or
   move the old directory by hand.
-- The `fl`, `fl-symbols` and `fl-callgraph` commands are unchanged.
+- The commands are renamed: `fl` is `mind1`, `fl-symbols` is `mind1-symbols`, and
+  `fl-callgraph` is `mind1-callgraph`. The old `build-symbols` and `build-callgraph` names
+  in help and error output now match the installed commands.
 
 ## 0.3.1
 

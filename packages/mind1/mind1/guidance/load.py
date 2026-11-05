@@ -230,7 +230,7 @@ def ingest_roots(store, roots) -> dict:
     Rules are withdrawn only from the rulebooks this call actually read. A rule that has
     disappeared from a rulebook has been retired and must stop being served; a rule in some
     other rulebook that this caller never opened is none of its business. That is what lets
-    `fl index` on one repository and `fl index-all` over a fleet share one code path with no
+    `mind1 index` on one repository and `mind1 index-all` over a fleet share one code path with no
     flag between them: the scope is whatever was read.
     """
     roots = [Path(r).resolve() for r in roots]

@@ -25,9 +25,9 @@ indexing toolchain and the MCP server.
 ## Use
 
 ```bash
-fl doctor                                    # check the toolchain first
-fl index-all /path/to/your/repos --db "$PWD/mind1.db"
-fl serve --db "$PWD/mind1.db"            # stdio, for one engineer
+mind1 doctor                                    # check the toolchain first
+mind1 index-all /path/to/your/repos --db "$PWD/mind1.db"
+mind1 serve --db "$PWD/mind1.db"            # stdio, for one engineer
 ```
 
 Full quickstart, the compatibility matrix, deployment and the benchmark are in the

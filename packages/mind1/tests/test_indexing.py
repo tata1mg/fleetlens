@@ -8,7 +8,7 @@ def test_call_graph_failure_still_yields_interfaces(tmp_path, monkeypatch):
     """A repo whose call graph cannot be built must still be indexed.
 
     scip-python fails on a Python repo with no virtualenv, which is the common case on a
-    first run. `fl doctor` tells users they can "index anyway to get interfaces and queues
+    first run. `mind1 doctor` tells users they can "index anyway to get interfaces and queues
     without a call graph", and for a while the indexer raised instead, dropping the whole
     repo including interfaces it had already proved.
     """

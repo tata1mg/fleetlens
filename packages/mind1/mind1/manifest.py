@@ -21,7 +21,7 @@ one corrupts both the service graph and any "which services are unused" reading 
 
 `guidance` names directories of human-authored engineering rules. A repo that holds only
 those declares `guidance: [{path: "."}]` and no services: its content is read by
-`fl ingest-guidance`, and it contributes no code, no symbols and no service. Declaring it
+`mind1 ingest-guidance`, and it contributes no code, no symbols and no service. Declaring it
 here is what lets services, libraries and rulebooks sit in one directory and still be told
 apart, since nothing about a folder of Markdown says which it is.
 

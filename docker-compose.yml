@@ -18,12 +18,12 @@ services:
     # Explicit --db on both services on purpose. The image sets MIND1_HOME=/data, whose
     # default index path is /data/data/mind1.db, so naming the file here and leaving it
     # implicit there would silently point the two at different files.
-    # The image's ENTRYPOINT is `fl`, so running a shell pipeline here needs it overridden,
-    # otherwise the whole thing is handed to `fl` as a subcommand.
+    # The image's ENTRYPOINT is `mind1`, so running a shell pipeline here needs it overridden,
+    # otherwise the whole thing is handed to `mind1` as a subcommand.
     entrypoint: ["/bin/sh", "-c"]
     # A single-element list on purpose: a folded scalar is split into separate argv
     # entries, and `sh -c` would then run only the first of them.
-    command: ["fl index-all /repos --db /data/mind1.db.new && mv /data/mind1.db.new /data/mind1.db"]
+    command: ["mind1 index-all /repos --db /data/mind1.db.new && mv /data/mind1.db.new /data/mind1.db"]
 
   serve:
     build: .

@@ -1,6 +1,6 @@
 """Indexing orchestration — build a repo's call graph and load it into a store.
 
-Shared by `fl index` (one repo) and `fl index-all` (a directory of service repos → one DB).
+Shared by `mind1 index` (one repo) and `mind1 index-all` (a directory of service repos → one DB).
 Deterministic, no LLM. Multi-repo is resilient: one repo failing never aborts the sweep.
 """
 from __future__ import annotations
@@ -176,7 +176,7 @@ def _extract_service(repo: Path, spec: ServiceSpec, *, default_language: str = "
                 call_graph_ok = cg_future.result() == 0
 
     # Sites the adapters saw but could not resolve — the only input the LLM gap-filler
-    # (`fl enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
+    # (`mind1 enrich --kinds gaps`) works from. Kept with the repo root so it can ground answers.
     sk_file = root / ".context" / "skipped.json"
     skipped = (json.loads(sk_file.read_text()).get("sites", []) if sk_file.exists() else []) \
         + [asdict(sk) for sk in skipped_out]

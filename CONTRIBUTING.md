@@ -70,7 +70,7 @@ adapter also records any call carrying a URL-shaped literal that no pattern clai
 that site stops being reported because the route is now found. Check with:
 
 ```bash
-fl doctor /path/to/repo      # ... interfaces   42 found, 3 unresolved, 2 unrecognised
+mind1 doctor /path/to/repo      # ... interfaces   42 found, 3 unresolved, 2 unrecognised
 ```
 
 A repo reporting `unrecognised` is the best possible bug report for an adapter: the pattern

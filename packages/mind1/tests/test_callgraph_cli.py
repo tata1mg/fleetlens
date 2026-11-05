@@ -33,7 +33,7 @@ def test_a_stale_symbol_file_is_not_silently_reused(tmp_path, monkeypatch):
     """`.context/_symbols.json` used to be trusted on sight.
 
     Nothing writes it during a normal index, so it only exists where someone ran
-    `fl-symbols` by hand. From then on every index of that repository reported spans
+    `mind1-symbols` by hand. From then on every index of that repository reported spans
     frozen at that moment while still recording the current commit beside them, which is
     how line numbers end up describing a version of a file nobody can see.
     """
@@ -101,7 +101,7 @@ def test_the_repos_own_virtualenv_goes_on_the_indexer_path(tmp_path, monkeypatch
     """scip-python runs `pip list` to see what the project depends on, and finds that pip
     on PATH. A fleet sweep with a tightly scoped PATH therefore failed on every repository
     with "Could not find valid pip command", before reading a line of source, while
-    `fl doctor` reported the toolchain healthy because the binary existed.
+    `mind1 doctor` reported the toolchain healthy because the binary existed.
 
     The repo's own virtualenv is both the pip it needs and the right one: resolving
     against whatever environment happens to be first on PATH gives the wrong dependencies.

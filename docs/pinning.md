@@ -14,7 +14,7 @@ Two things have to be true of the server, not of your machine:
 
 - **SQLite 3.27 or newer**, because the snapshot is taken with `VACUUM INTO`.
 - **An index built by 0.2.0 or later.** Earlier indexes carry no build id, and there is
-  nothing to name a pin after, so `fl pin create` returns 409. Re-index to fix it.
+  nothing to name a pin after, so `mind1 pin create` returns 409. Re-index to fix it.
 
 ## The short version
 
@@ -22,7 +22,7 @@ Two things have to be true of the server, not of your machine:
 export MIND1_URL=http://mind1.internal:8081
 export MIND1_TOKEN=...                         # the team's shared token
 
-fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+mind1 pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 # pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
 ```
 
@@ -40,7 +40,7 @@ Same tools, same token, same responses. Nothing else about your setup changes.
 A mind1 index is one SQLite file, so a pin is a copy of that file with a name and an
 expiry date.
 
-1. **`fl pin create` snapshots the index the server is serving right now.** The copy is
+1. **`mind1 pin create` snapshots the index the server is serving right now.** The copy is
    taken with SQLite's `VACUUM INTO`, which is consistent even if a rebuild is running, so
    you never get a half-written pin.
 2. **The copy never changes.** Later rebuilds replace the live index and leave your pin
@@ -59,13 +59,13 @@ All four talk to the server over HTTP. They do not touch your local machine's in
 they do not need one.
 
 ```bash
-fl pin create --as <alias> [--reason "..."] [--owner "..."]
-fl pin list
-fl pin extend <alias> --days N
-fl pin delete <alias>            # fl unpin <alias> does the same thing
+mind1 pin create --as <alias> [--reason "..."] [--owner "..."]
+mind1 pin list
+mind1 pin extend <alias> --days N
+mind1 pin delete <alias>            # mind1 unpin <alias> does the same thing
 ```
 
-`fl pin list` shows the alias, the build it captured, who made it, why, and when it goes:
+`mind1 pin list` shows the alias, the build it captured, who made it, why, and when it goes:
 
 ```
 ALIAS       BUILD             OWNER  REASON                         EXPIRES
@@ -99,7 +99,7 @@ is configured in your editor you already have it.
 
 ### You do not have to install anything
 
-`fl pin` is a convenience over plain HTTP. Everything it does works with curl, which is
+`mind1 pin` is a convenience over plain HTTP. Everything it does works with curl, which is
 useful from CI or from a machine where you do not want a Python environment:
 
 ```bash
@@ -144,7 +144,7 @@ Log all three with your results.
 
 ## Expiry
 
-The server decides how long a pin lives, which is why `fl pin create` takes no duration. An
+The server decides how long a pin lives, which is why `mind1 pin create` takes no duration. An
 operator sets the policy once and nobody can opt out of it by asking for ten years.
 
 | Setting | Default | Meaning |
@@ -152,14 +152,14 @@ operator sets the policy once and nobody can opt out of it by asking for ten yea
 | `MIND1_RETAIN_PINNED_DAYS` | 30 | How long a new pin lives |
 | `MIND1_PIN_EXTEND_MAX_DAYS` | 10 | The most one `extend` may add |
 
-`fl pin extend` pushes the expiry out, by up to the cap each time:
+`mind1 pin extend` pushes the expiry out, by up to the cap each time:
 
 ```
-$ fl pin extend eval-q4 --days 5
+$ mind1 pin extend eval-q4 --days 5
 "eval-q4" now expires 2026-11-25
 
-$ fl pin extend eval-q4 --days 99
-fl pin: days must be a whole number from 1 to 10
+$ mind1 pin extend eval-q4 --days 99
+mind1 pin: days must be a whole number from 1 to 10
 ```
 
 You can extend more than once, so a long-running experiment is fine; you just have to come
@@ -175,7 +175,7 @@ is hundreds of megabytes. There is no per-pin quota, so the disk is a shared res
 the team's manners are what protect it.
 
 **Anyone can delete anyone's pin.** The server uses one shared token, so `--owner` is a
-label that makes `fl pin list` readable, not a permission. Name your pins clearly and check
+label that makes `mind1 pin list` readable, not a permission. Name your pins clearly and check
 with people before removing theirs.
 
 **A handful of pins can be served at once.** Each open pin holds its enrichment vectors in

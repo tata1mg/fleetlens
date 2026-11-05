@@ -1,4 +1,4 @@
-"""Thin client for the pin admin API, for `fl pin` and `fl unpin`.
+"""Thin client for the pin admin API, for `mind1 pin` and `mind1 unpin`.
 
 Standard library only, like enrich/providers.py. `pip install mind1` with no extras must
 be enough to pin from a laptop, so nothing here may import the server stack, numpy or a
@@ -81,7 +81,7 @@ def resolve_connection(url, token, env=None, config_path=None) -> tuple:
             except OSError:
                 mode = 0
             if mode & (stat.S_IRWXG | stat.S_IRWXO):
-                print(f"fl: warning: {path} holds a token and is readable by other users; "
+                print(f"mind1: warning: {path} holds a token and is readable by other users; "
                       f"run chmod 600 on it.", file=sys.stderr)
         url = url or cfg.get("url") or None
         token = token or cfg.get("token") or None
@@ -130,7 +130,7 @@ def newer_server_note(response: dict):
     """One line to print when the server speaks a newer API than this client, else None."""
     version = response.get("api_version")
     if isinstance(version, int) and version > API_VERSION:
-        return (f"fl: the server speaks API version {version}, newer than this client's "
+        return (f"mind1: the server speaks API version {version}, newer than this client's "
                 f"{API_VERSION}; upgrade mind1 to see everything it reports.")
     return None
 

@@ -143,7 +143,7 @@ def test_the_mcp_tool_returns_the_edge(tmp_path):
     """What an agent receives, through the registered tool and a reopened index.
 
     Goes through a file rather than `:memory:` so the edge is proved to survive the write
-    and the read-only reopen that `fl serve` does, not just the store object in hand.
+    and the read-only reopen that `mind1 serve` does, not just the store object in hand.
     """
     pytest.importorskip("mcp")
     from mind1.server.app import build_context

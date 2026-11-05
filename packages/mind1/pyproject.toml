@@ -49,9 +49,9 @@ Issues = "https://github.com/tata1mg/mind1/issues"
 Benchmark = "https://github.com/tata1mg/mind1/blob/main/BENCHMARK.md"
 
 [project.scripts]
-fl = "mind1.cli:main"
-fl-symbols = "mind1.symbols.cli:main"
-fl-callgraph = "mind1.callgraph.cli:main"
+mind1 = "mind1.cli:main"
+mind1-symbols = "mind1.symbols.cli:main"
+mind1-callgraph = "mind1.callgraph.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

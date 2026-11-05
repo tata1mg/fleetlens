@@ -18,7 +18,7 @@
 #   docker run -d -p 8081:8081 -v mind1-data:/data -e MIND1_TOKEN \
 #       mind1 serve --http --host 0.0.0.0
 #
-# For a single engineer, `fl serve` over stdio on the host is simpler than a container:
+# For a single engineer, `mind1 serve` over stdio on the host is simpler than a container:
 # the MCP client wants to start the process itself.
 #
 # Behind a TLS-intercepting corporate proxy, npm and pip cannot verify the registry
@@ -64,5 +64,5 @@ EXPOSE 8081
 # Indexing writes a .context/ directory into each repository it reads, so mount your sources
 # read-write, or accept that the call graph step will fail on a read-only mount.
 WORKDIR /repos
-ENTRYPOINT ["fl"]
+ENTRYPOINT ["mind1"]
 CMD ["doctor"]

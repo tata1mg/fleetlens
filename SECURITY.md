@@ -14,14 +14,14 @@ network calls.
 
 Two paths can send code off the machine, and both are opt-in:
 
-* `fl enrich` and `fl index --fill-gaps` with `--provider openai` or another remote endpoint.
+* `mind1 enrich` and `mind1 index --fill-gaps` with `--provider openai` or another remote endpoint.
   The default provider is Ollama, which runs locally.
 * Nothing else. The MCP server makes no outbound calls of its own, unless it is configured
   with a remote embedding provider for the semantic search tools.
 
 ## The HTTP server
 
-`fl serve --http` is the only part of mind1 that listens on a network, and it is built
+`mind1 serve --http` is the only part of mind1 that listens on a network, and it is built
 for a trusted network rather than for the open internet. Know these before you expose it:
 
 * **No TLS.** Requests and the bearer token travel in the clear. Put it behind a reverse

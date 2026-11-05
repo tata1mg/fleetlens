@@ -1,4 +1,4 @@
-"""`build-callgraph` — write a repo's static call graph to .context/callgraph.json.
+"""`mind1-callgraph` — write a repo's static call graph to .context/callgraph.json.
 
 Deterministic, no AI. Pipeline:
 
@@ -6,7 +6,7 @@ Deterministic, no AI. Pipeline:
     2. load the tree-sitter symbol index (_symbols.json; built inline if absent)
     3. join them into callgraph/v1 (see extractor.py)
 
-Run at index time, after `build-symbols`. Exit codes: 0 ok, 2 usage/toolchain error.
+Run at index time, after `mind1-symbols`. Exit codes: 0 ok, 2 usage/toolchain error.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ _INDEXERS = {
     },
     "typescript": {
         "tool": "scip-typescript",
-        # Optional for the same reason as scip-ruby, and because `fl doctor` has always
+        # Optional for the same reason as scip-ruby, and because `mind1 doctor` has always
         # reported it that way: when it is absent, routes, outbound calls and messaging are
         # still read and only the call edges are missing. Failing the whole repo instead
         # would lose the other three for a tool the doctor called optional.
@@ -59,7 +59,7 @@ _INDEXERS = {
 def _repo_venv_bin(repo: Path) -> Optional[str]:
     """The repo's own virtualenv bin directory, if it has one.
 
-    Same four names `fl doctor` reports on, so a repo the doctor calls ready is a repo the
+    Same four names `mind1 doctor` reports on, so a repo the doctor calls ready is a repo the
     indexer can actually use.
     """
     for name in ("venv", ".venv", "env", ".env"):
@@ -97,7 +97,7 @@ def _run_indexer(language: str, repo: Path, out: Path, name: str) -> None:
     # which is the wrong set of dependencies, or dies outright where there is no `pip` at
     # all: a sweep run with a deliberately minimal PATH failed on every repository in a
     # fleet with "Could not find valid pip command", before reading a line of source.
-    # `fl doctor` already looks for these same four names per repo.
+    # `mind1 doctor` already looks for these same four names per repo.
     venv_bin = _repo_venv_bin(repo)
     if venv_bin:
         env["PATH"] = f"{venv_bin}{os.pathsep}{env.get('PATH', '')}"
@@ -146,7 +146,7 @@ def _symbol_index(repo: Path, context_dir: Path, precomputed: Optional[str] = No
 
     This used to reuse `.context/_symbols.json` whenever it happened to exist, with no
     check that it still described the working tree. Nothing writes that file during a
-    normal index, so it only appears when someone has run `fl-symbols` by hand, and from
+    normal index, so it only appears when someone has run `mind1-symbols` by hand, and from
     then on every index of that repo silently reported spans frozen at the moment they did.
     The index kept recording the current commit beside them, so the drift was invisible and
     grew. Reuse is now something a caller asks for and owns.
@@ -164,7 +164,7 @@ def _symbol_index(repo: Path, context_dir: Path, precomputed: Optional[str] = No
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(prog="build-callgraph")
+    ap = argparse.ArgumentParser(prog="mind1-callgraph")
     ap.add_argument("repo", nargs="?", default=".", help="repo root to index (default: .)")
     ap.add_argument("-l", "--language", default="python",
                     help="source language for the SCIP indexer (default: python)")
@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
 
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
-        print(f"build-callgraph: not a directory: {repo}", file=sys.stderr)
+        print(f"mind1-callgraph: not a directory: {repo}", file=sys.stderr)
         return 2
     slug = args.slug or repo.name
     context_dir = repo / ".context"
@@ -201,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         symbol_index = _symbol_index(repo, context_dir, args.symbols)
     except RuntimeError as exc:
-        print(f"build-callgraph: {exc}", file=sys.stderr)
+        print(f"mind1-callgraph: {exc}", file=sys.stderr)
         return 2
 
     degraded = False
@@ -209,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.scip:
             scip_path = Path(args.scip)
             if not scip_path.exists():
-                print(f"build-callgraph: --scip not found: {scip_path}", file=sys.stderr)
+                print(f"mind1-callgraph: --scip not found: {scip_path}", file=sys.stderr)
                 return 2
             cg = build_callgraph(scip_path, symbol_index, slug)
         else:
@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
                 except OptionalIndexerMissing as exc:
                     # symbols still index; only the call edges are unavailable
                     if not args.quiet:
-                        print(f"build-callgraph: {exc} not installed, "
+                        print(f"mind1-callgraph: {exc} not installed, "
                               f"indexing {args.language} without a call graph",
                               file=sys.stderr)
                     cg = _symbols_only(symbol_index, slug)
@@ -232,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         # to happen invisibly because the previous run's file stayed on disk and was
         # loaded in their place. Write what we do have, and report the failure through the
         # exit status so the run still says the call graph is unavailable.
-        print(f"build-callgraph: {exc}", file=sys.stderr)
+        print(f"mind1-callgraph: {exc}", file=sys.stderr)
         cg = _symbols_only(symbol_index, slug)
         degraded = True
 
@@ -245,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         out.write_text(payload, encoding="utf-8")
         if not args.quiet:
             s = cg["stats"]
-            print(f"build-callgraph: {s['nodes']} nodes, {s['edges']} edges "
+            print(f"mind1-callgraph: {s['nodes']} nodes, {s['edges']} edges "
                   f"({s['documents']} docs) -> {out}")
     return 2 if degraded else 0
 

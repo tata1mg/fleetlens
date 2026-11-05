@@ -381,7 +381,7 @@ def test_embedding_guidance_needs_no_generation_model(monkeypatch, tmp_path):
     args = argparse.Namespace(
         provider="ollama", model="some-llm:7b", embed_provider="ollama",
         embed_model="all-minilm", base_url="", api_key_env="OPENAI_API_KEY", pull=False)
-    built = cli._build_llm(args, "fl enrich", need_embed=True, need_llm=False)
+    built = cli._build_llm(args, "mind1 enrich", need_embed=True, need_llm=False)
     assert built is not None
     assert "some-llm:7b" not in asked, "asked for a generation model it never calls"
     assert "all-minilm" in asked

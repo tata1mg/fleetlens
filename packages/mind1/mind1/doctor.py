@@ -1,4 +1,4 @@
-"""`fl doctor`: check that this machine can index, and that a given repo can be indexed.
+"""`mind1 doctor`: check that this machine can index, and that a given repo can be indexed.
 
 Setup spans several ecosystems (Python for mind1, Node for the SCIP indexers, optionally
 Ollama for the LLM tier), so a failure usually surfaces far from its cause. The worst example
@@ -77,7 +77,7 @@ def check_core(rep: Report) -> None:
         rep.add("mcp", OK, "installed")
     except ImportError:
         rep.add("mcp", WARN, "missing",
-                'pip install "mind1[server]"   (needed for `fl serve`)')
+                'pip install "mind1[server]"   (needed for `mind1 serve`)')
 
 
 def _scip_ruby_hint() -> str:
@@ -119,7 +119,7 @@ def check_ollama(rep: Report, base_url: str = "http://localhost:11434") -> None:
             models = [m.get("name", "") for m in json.loads(r.read()).get("models", [])]
     except (urllib.error.URLError, OSError, ValueError):
         rep.add("ollama", SKIP, "not reachable, LLM tiers unavailable",
-                "ollama serve   (only needed for `--fill-gaps` and `fl enrich`)")
+                "ollama serve   (only needed for `--fill-gaps` and `mind1 enrich`)")
         return
     rep.add("ollama", OK, f"{len(models)} model(s) installed")
     if not any("bge" in m or "embed" in m for m in models):
@@ -227,7 +227,7 @@ def check_interfaces(rep: Report, repo: Path) -> None:
         rep.add("interfaces", WARN, detail,
                 "route registrations no adapter recognised, in "
                 + ", ".join(where) + (" and others" if len(set(s.file for s in unknown)) > 3 else "")
-                + ". Run `fl index <repo> --fill-gaps` to resolve them, or open an issue "
+                + ". Run `mind1 index <repo> --fill-gaps` to resolve them, or open an issue "
                   "with the pattern so an adapter can cover it.")
     elif not found:
         rep.add("interfaces", WARN, detail,

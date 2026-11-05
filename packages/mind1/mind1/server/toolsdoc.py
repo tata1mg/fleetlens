@@ -120,7 +120,7 @@ def render() -> str:
         "## Availability", "",
         "Tools are registered only when they can answer. A tool that is absent is not an",
         "error: an advertised tool that always fails costs an agent a turn and teaches it to",
-        "stop trusting the server. A default `fl serve` against an index with no guidance and",
+        "stop trusting the server. A default `mind1 serve` against an index with no guidance and",
         "no embeddings advertises "
         f"{sum(1 for t in tools if t.name not in AVAILABILITY)} of these {len(tools)}.", "",
         "| Tool | Registered when |", "|---|---|",

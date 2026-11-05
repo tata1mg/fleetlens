@@ -186,7 +186,7 @@ def main() -> int:
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=900)
-    ap.add_argument("--fl-bin", default="fl")
+    ap.add_argument("--mind1-bin", default="mind1")
     ap.add_argument("--only", default="", help="comma-separated question ids")
     ap.add_argument("--workers", type=int, default=1,
                     help="run N cases concurrently. Each case is a separate subprocess and "
