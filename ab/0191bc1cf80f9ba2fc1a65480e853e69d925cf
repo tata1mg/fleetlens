@@ -1,0 +1,213 @@
+.github/dependabot.yml
+  s_1f7e23261d0b8e::t_c603ec9cca5a6c 6
+.github/scripts/mcp_smoke.py
+  s_1f7e23261d0b8e::t_a65e7345700cd6 1
+.github/workflows/ci.yml
+  s_1f7e23261d0b8e::t_1405a4db468703 28-29,44,46,49,59,66,71,83,90,92,130,132
+.gitignore
+  s_1f7e23261d0b8e::t_7482a1e09b32bd 17
+.mind1ignore
+  s_1f7e23261d0b8e::t_00dabc94c15d42 1
+BENCHMARK.md
+  s_1f7e23261d0b8e::t_8198b03f7c577a 1,4,8,12,31,33,36-37,66-67,72-73,93,112-113,121,162,208,211,213,220,223,225-226,237,246,251,268,279,282
+CHANGELOG.md
+  s_1f7e23261d0b8e::t_a4d365e415b175 3-20
+CONTRIBUTING.md
+  s_1f7e23261d0b8e::t_cf12f8b108b576 1,5,14-15,17,22,34,81,96,106,117
+Dockerfile
+  s_1f7e23261d0b8e::t_44bd005add589e 1,3,7,9,12-13,18-19,28,51-52,54-56,58,60
+README.md
+  s_1f7e23261d0b8e::t_135c6049e75228 1,16,23,32,36,60,62,65-67,89-90,97,108,110,127-129,168,178-179,208,222,310,327,345-346,354,357-358,368,396,417,437,491,500,517,523,538,545,548,556,562,571,606
+ROADMAP.md
+  s_1f7e23261d0b8e::t_a4a653eec51c53 3,31,69
+SECURITY.md
+  s_1f7e23261d0b8e::t_d9f75110667647 6,9,24,41,49,59,76-77
+bench/README.md
+  s_1f7e23261d0b8e::t_0ce0a0cd01c4d2 1,3,8,10,13-14,21,28-29,36,38,45,64,91-92
+bench/make_questions_c4.py
+  s_1f7e23261d0b8e::t_ecec0b485790ad 3-4,9,15,33
+bench/mcp_perf.py
+  s_1f7e23261d0b8e::t_fcd375e8796496 2,17,272,274
+bench/run.py
+  s_1f7e23261d0b8e::t_04be164a43b971 3,7,42,51-52,58,172,210
+bench/score.py
+  s_1f7e23261d0b8e::t_33dc1f70995f4c 166-167,179
+docker-compose.yml
+  s_1f7e23261d0b8e::t_6168af35eb996f 3,16-19,26,32,34,37,39-40,46-47
+docs/_config.yml
+  s_1f7e23261d0b8e::t_c4a9a64368d0af 10,12
+docs/deployment.md
+  s_1f7e23261d0b8e::t_3b8116740fd9d1 1,19,29,31,45,48,51,72-74,77,79,82,86-88,96-98,101,109,113,118-121,124,128-129,132-133,137,141,143,147-149,155,165,179,189,192,194,199-201,206,208,220,233,237,240-241,249,257,283
+docs/index.md
+  s_1f7e23261d0b8e::t_f51499769c2410 1,11,19,21,30,44-46,54,56-57,59
+docs/pinning.md
+  s_1f7e23261d0b8e::t_b56c9018f6e68a 22-23,32-33,40,88-89,92-93,97,106-107,110-112,119,152-153,183
+docs/tools.md
+  s_1f7e23261d0b8e::t_0356551c015b88 1,4,31,231
+packages/mind1/README.md
+  s_1f7e23261d0b8e::t_0ed8eb87e5cde5 1,5,12,16,19,29-30,34
+packages/mind1/mind1/__init__.py
+  s_1f7e23261d0b8e::t_047d956bafd95b 1
+packages/mind1/mind1/adapters/_pysrc.py
+  s_1f7e23261d0b8e::t_073f5cdab0da37 11
+packages/mind1/mind1/adapters/_walk.py
+  s_1f7e23261d0b8e::t_e5a2774de06d41 35,48,55
+packages/mind1/mind1/adapters/hosts.py
+  s_1f7e23261d0b8e::t_c2d41d07d80143 13,58,136,143,302,320
+packages/mind1/mind1/adapters/python_web.py
+  s_1f7e23261d0b8e::t_19dca54601e2d4 28
+packages/mind1/mind1/callgraph/README.md
+  s_1f7e23261d0b8e::t_53d52f6903222b 40
+packages/mind1/mind1/callgraph/cli.py
+  s_1f7e23261d0b8e::t_8d0580372586b5 161
+packages/mind1/mind1/cli.py
+  s_1f7e23261d0b8e::t_6ebbcf854bd73b 1,11,33,35,38-39,119,279,482,494,511,538,550,643,645,655,688,723
+packages/mind1/mind1/doctor.py
+  s_1f7e23261d0b8e::t_bed1a8d0527303 3,59,66,73,80,149,181-182,224,262
+packages/mind1/mind1/enrich/enrich.py
+  s_1f7e23261d0b8e::t_961b9546d587b6 42-44,51,58-59,62,65,68,404
+packages/mind1/mind1/enrich/gaps.py
+  s_1f7e23261d0b8e::t_1ee4e293c12ce6 231
+packages/mind1/mind1/enrich/providers.py
+  s_1f7e23261d0b8e::t_dd1856ed0bc4f6 28,35,57,87
+packages/mind1/mind1/enrich/repo_docs.py
+  s_1f7e23261d0b8e::t_6b92576bfa0e5d 3
+packages/mind1/mind1/export.py
+  s_1f7e23261d0b8e::t_946ad9fa3436c8 74,82
+packages/mind1/mind1/guidance/__init__.py
+  s_1f7e23261d0b8e::t_bf328eff1ccbb0 3
+packages/mind1/mind1/guidance/embed.py
+  s_1f7e23261d0b8e::t_40160ae5b3b606 5,14
+packages/mind1/mind1/guidance/load.py
+  s_1f7e23261d0b8e::t_ae794181d35415 4
+packages/mind1/mind1/indexing.py
+  s_1f7e23261d0b8e::t_9604baa1d39787 78,279
+packages/mind1/mind1/manifest.py
+  s_1f7e23261d0b8e::t_1f89eac8d8938e 3,39,72
+packages/mind1/mind1/pin_client.py
+  s_1f7e23261d0b8e::t_a83e1653282a14 3,37,70-71,73-74,92,94,122,134
+packages/mind1/mind1/pins.py
+  s_1f7e23261d0b8e::t_3b778e3d443bc8 83-84,199
+packages/mind1/mind1/server/http.py
+  s_1f7e23261d0b8e::t_407b33508c5193 157
+packages/mind1/mind1/server/routing.py
+  s_1f7e23261d0b8e::t_2cb3189554dbc4 30,43
+packages/mind1/mind1/server/tools/_offload.py
+  s_1f7e23261d0b8e::t_d44ac7e876f379 53,71,77-78
+packages/mind1/mind1/server/tools/guidance.py
+  s_1f7e23261d0b8e::t_6910d0ac79fe5a 43,46
+packages/mind1/mind1/server/tools/source.py
+  s_1f7e23261d0b8e::t_7922f7b1440730 20
+packages/mind1/mind1/server/toolsdoc.py
+  s_1f7e23261d0b8e::t_0833b56d6630d3 28,39,69,72,115
+packages/mind1/mind1/service/relationships.py
+  s_1f7e23261d0b8e::t_a717fa49c373d7 70
+packages/mind1/mind1/service/source.py
+  s_1f7e23261d0b8e::t_31fa7a446cb375 27
+packages/mind1/mind1/stats.py
+  s_1f7e23261d0b8e::t_e768ea82b194c1 4
+packages/mind1/mind1/store/sqlite.py
+  s_1f7e23261d0b8e::t_22ff38fa1233eb 136,253,302,314
+packages/mind1/mind1/symbols/cli.py
+  s_1f7e23261d0b8e::t_bbce5ee2c4206c 33
+packages/mind1/pyproject.toml
+  s_1f7e23261d0b8e::t_91d75dbd55060d 6,24-25,34,43,46-49,52-54,58
+packages/mind1/tests/test_adapters.py
+  s_1f7e23261d0b8e::t_9acf2d3d964d8f 4-8,92,117
+packages/mind1/tests/test_callgraph_anchor.py
+  s_1f7e23261d0b8e::t_f9b5cf519bb0eb 4
+packages/mind1/tests/test_callgraph_cli.py
+  s_1f7e23261d0b8e::t_d736e0a7d0d7cb 16,40,76,109,135
+packages/mind1/tests/test_callgraph_extractor.py
+  s_1f7e23261d0b8e::t_e0584819e33a5b 7-8
+packages/mind1/tests/test_cross_repo_e2e.py
+  s_1f7e23261d0b8e::t_364be44961a466 5,19-21,149-150
+packages/mind1/tests/test_docs_pins.py
+  s_1f7e23261d0b8e::t_6d6e3968ebf1fd 16,20-21,30
+packages/mind1/tests/test_doctor.py
+  s_1f7e23261d0b8e::t_132553d1236786 8
+packages/mind1/tests/test_enrich.py
+  s_1f7e23261d0b8e::t_c70308ff152df4 5-8,95,134,147,165,185,199,233,257,280,395,416,432,459,477,488,504,515-516,548,567,581
+packages/mind1/tests/test_exclusions.py
+  s_1f7e23261d0b8e::t_599724eb2b2635 3,9-10,15,55,73,87,103,120,130
+packages/mind1/tests/test_export.py
+  s_1f7e23261d0b8e::t_c9d3ca4f1d46b1 4-6
+packages/mind1/tests/test_find_symbol.py
+  s_1f7e23261d0b8e::t_4d34b9eb049364 9-10
+packages/mind1/tests/test_gaps.py
+  s_1f7e23261d0b8e::t_11931afebb1691 6-12,196-197,228,239-240
+packages/mind1/tests/test_guidance.py
+  s_1f7e23261d0b8e::t_a4a1d0553fc175 5-7,173,186,201-202,229,234,239,241,246,248,315,326,331,347,350,365,377,398,405,414,424,432,438,449
+packages/mind1/tests/test_guidance_link.py
+  s_1f7e23261d0b8e::t_e6cd8fa14fa080 4-7,86,216,226,236,245,255,266,277,287,299-300,319
+packages/mind1/tests/test_indexing.py
+  s_1f7e23261d0b8e::t_279e8a63db080d 4,15,41,69,113,132,161,199,222,224
+packages/mind1/tests/test_language.py
+  s_1f7e23261d0b8e::t_d745aa28a96dd6 4-5
+packages/mind1/tests/test_manifest.py
+  s_1f7e23261d0b8e::t_137c0c46a11eaf 5,15,28,35,38,50-52,62,86,88,97,99
+packages/mind1/tests/test_messaging.py
+  s_1f7e23261d0b8e::t_bf53f2c333bfeb 6,11-14,170,190
+packages/mind1/tests/test_meta.py
+  s_1f7e23261d0b8e::t_a5be2835d7849c 10-11,48,106,118,128
+packages/mind1/tests/test_mounts.py
+  s_1f7e23261d0b8e::t_0108e731fc3e7c 4,12,155
+packages/mind1/tests/test_offload.py
+  s_1f7e23261d0b8e::t_347e5ce1ec0215 8,111
+packages/mind1/tests/test_pin_admin.py
+  s_1f7e23261d0b8e::t_9ba16ae4bc0e21 9-13
+packages/mind1/tests/test_pin_client.py
+  s_1f7e23261d0b8e::t_1ca28106dbdf66 11,58,125,133,161,198,201
+packages/mind1/tests/test_pin_serving.py
+  s_1f7e23261d0b8e::t_0bd392b0b04f23 7
+packages/mind1/tests/test_pins.py
+  s_1f7e23261d0b8e::t_7405c8dbb9bacf 10-13,128,163,172-174,328
+packages/mind1/tests/test_repo_docs.py
+  s_1f7e23261d0b8e::t_349d1e7dd84a9a 6
+packages/mind1/tests/test_resolve.py
+  s_1f7e23261d0b8e::t_bff93889af6920 4-8,83,94,103-104,127-128,149,163,168,173,183,191-192,200,216,227,239,249,265,275-276
+packages/mind1/tests/test_route_coverage.py
+  s_1f7e23261d0b8e::t_fce24b88614467 12,136,209,311,387
+packages/mind1/tests/test_ruby_adapters.py
+  s_1f7e23261d0b8e::t_aa848fb21c1f10 4-5
+packages/mind1/tests/test_scip_reader.py
+  s_1f7e23261d0b8e::t_7f07cc57780267 8
+packages/mind1/tests/test_serve_http.py
+  s_1f7e23261d0b8e::t_6e09782d93ec23 5-7,51,53,57-58,91,95-99,145,172,177,197,206,208,210-211,213
+packages/mind1/tests/test_server.py
+  s_1f7e23261d0b8e::t_517de30c98545b 4-5,61,89
+packages/mind1/tests/test_service_callgraph.py
+  s_1f7e23261d0b8e::t_b4dfacb272a94e 7-10
+packages/mind1/tests/test_source.py
+  s_1f7e23261d0b8e::t_ff5f57483c2782 14-20,164,184,205,232,252,262,273,289,297,307,349,469
+packages/mind1/tests/test_store_sqlite.py
+  s_1f7e23261d0b8e::t_2cda8015f876ad 4-5,87-89,105-106,143-144
+packages/mind1/tests/test_symbols.py
+  s_1f7e23261d0b8e::t_232b2fc7ad8c97 14
+packages/mind1/tests/test_toolsdoc.py
+  s_1f7e23261d0b8e::t_24260e4cf9d625 12,17,52-53,55,69-70
+packages/mind1/tests/test_ts_adapters.py
+  s_1f7e23261d0b8e::t_0173c1fa084af8 4-9,71
+packages/mind1/tests/test_vector_search.py
+  s_1f7e23261d0b8e::t_03127fe9f609fa 12-13
+packages/mind1/tests/test_walk.py
+  s_1f7e23261d0b8e::t_c8dd61aadff398 9
+ruff.toml
+  s_1f7e23261d0b8e::t_d3a185ab656d05 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab0191bc1cf80f9ba2fc1a65480e853e69d925cf",
+  "prompts": {},
+  "sessions": {
+    "s_1f7e23261d0b8e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "27cdebf8-0e3b-4b2c-a0df-e788ee49dd1a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
