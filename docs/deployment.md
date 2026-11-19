@@ -27,7 +27,7 @@ relative `--db` points somewhere else and a bare `mind1` may not be found at all
 {
   "mcpServers": {
     "mind1": {
-      "command": "/absolute/path/to/fl",
+      "command": "/absolute/path/to/mind1",
       "args": ["serve", "--db", "/absolute/path/to/mind1.db"]
     }
   }
@@ -106,7 +106,7 @@ sudo npm install -g @sourcegraph/scip-python @sourcegraph/scip-typescript
 ```
 
 ```bash
-sudo -u "$MIND1_USER" "$MIND1_HOME/venv/bin/fl" doctor
+sudo -u "$MIND1_USER" "$MIND1_HOME/venv/bin/mind1" doctor
 ```
 
 Put the token and the paths in one env file next to the index, so the server and the refresh
@@ -126,7 +126,7 @@ else, so there is no env file to source here and the token stays where it is:
 
 ```bash
 sudo -u "$MIND1_USER" env MIND1_HOME="$MIND1_HOME" \
-  "$MIND1_HOME/venv/bin/fl" index-all "$MIND1_REPOS"
+  "$MIND1_HOME/venv/bin/mind1" index-all "$MIND1_REPOS"
 ```
 
 With `MIND1_HOME` set there is no `--db` to pass: the index lands at
@@ -146,7 +146,7 @@ After=network.target
 [Service]
 User=$MIND1_USER
 EnvironmentFile=$MIND1_HOME/.env
-ExecStart=$MIND1_HOME/venv/bin/fl serve --http --host 0.0.0.0 --port 8081
+ExecStart=$MIND1_HOME/venv/bin/mind1 serve --http --host 0.0.0.0 --port 8081
 Restart=always
 
 # The server never touches the repositories. It reads the index and, when someone pins a
@@ -198,7 +198,7 @@ After=network.target
 Type=oneshot
 User=$MIND1_USER
 EnvironmentFile=$MIND1_HOME/.env
-ExecStart=/bin/sh -c '$MIND1_HOME/venv/bin/fl index-all "\$MIND1_REPOS" --db "\$MIND1_HOME/data/mind1.db.new" && mv "\$MIND1_HOME/data/mind1.db.new" "\$MIND1_HOME/data/mind1.db"'
+ExecStart=/bin/sh -c '$MIND1_HOME/venv/bin/mind1 index-all "\$MIND1_REPOS" --db "\$MIND1_HOME/data/mind1.db.new" && mv "\$MIND1_HOME/data/mind1.db.new" "\$MIND1_HOME/data/mind1.db"'
 EOF
 ```
 

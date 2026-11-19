@@ -106,7 +106,7 @@ that most often turn a working index into an agent that reports no services.
 {
   "mcpServers": {
     "mind1": {
-      "command": "/absolute/path/to/fl",
+      "command": "/absolute/path/to/mind1",
       "args": ["serve", "--db", "/absolute/path/to/mind1.db"]
     }
   }
