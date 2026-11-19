@@ -1,0 +1,21 @@
+README.md
+  s_1f7e23261d0b8e::t_4078c9168dcee3 109
+docs/deployment.md
+  s_1f7e23261d0b8e::t_96339338f06c01 30,109,129,149,201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "711b447f8659c3d7738cec4f7de92c4fbaf22e25",
+  "prompts": {},
+  "sessions": {
+    "s_1f7e23261d0b8e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "27cdebf8-0e3b-4b2c-a0df-e788ee49dd1a",
+        "model": "claude-sonnet-5-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
