@@ -359,6 +359,31 @@ class SqliteStore(ContextStore, KnowledgeStore, RelationshipStore, SemanticStore
         )
         return cur.rowcount
 
+    def delete_scope(self, exact: list[str], prefixes: list[str]) -> dict:
+        """Delete objects by exact id and by id prefix, with their enrichments.
+
+        Not on ContextStore: producers clear one scope before re-inserting it, which
+        `delete_objects_by_id_prefix` already covers. This is the maintenance operation
+        behind `fl forget`, and it has to reach the enrichment table, which has no foreign
+        key and so cascades nothing. Edges do cascade, from both ends.
+
+        Exact ids are not expressible as prefixes. `service:cart` as a prefix would also
+        match `service:cart-worker`, which is a different service.
+        """
+        objects = enrichments = 0
+        for object_id in exact:
+            enrichments += self._conn.execute(
+                "DELETE FROM enrichments WHERE object_id = ?;", (object_id,)).rowcount
+            objects += self._conn.execute(
+                "DELETE FROM knowledge_objects WHERE id = ?;", (object_id,)).rowcount
+        for prefix in prefixes:
+            n = len(prefix)
+            enrichments += self._conn.execute(
+                "DELETE FROM enrichments WHERE substr(object_id, 1, ?) = ?;",
+                (n, prefix)).rowcount
+            objects += self.delete_objects_by_id_prefix(prefix)
+        return {"objects": objects, "enrichments": enrichments}
+
     # --- KnowledgeStore ----------------------------------------------------
     def get(self, object_id: str) -> Optional[KnowledgeObject]:
         row = self._conn.execute(

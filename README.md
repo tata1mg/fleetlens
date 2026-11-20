@@ -126,8 +126,14 @@ streamable-HTTP behind a shared bearer token, with the index opened read-only. S
 ```bash
 mind1 index /path/to/repo --db mind1.db     # a single repo instead of a fleet
 mind1 resolve --db mind1.db                 # recompute cross-repo edges
+mind1 forget old-service --db mind1.db      # take a repo back out of the index
 mind1 export-graph --db mind1.db -o mesh.html   # self-contained HTML render, no server
 ```
+
+Re-indexing replaces what it visits, so a repository you simply stop indexing stays in the
+index and keeps answering as a live service. `mind1 forget` takes it out: a service or library
+slug, or a repository as `get_index_info` reports it. It prints what it matched and asks
+before writing, and leaves the index as a full rebuild without that repository would have.
 </details>
 
 ---
