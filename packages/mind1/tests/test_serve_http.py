@@ -207,7 +207,12 @@ def test_an_operator_can_still_pin_the_accepted_hosts():
 
     s = security_settings("0.0.0.0", ["mind1.internal", "10.1.7.242"])
     assert s.enable_dns_rebinding_protection is True
-    assert "mind1.internal" in s.allowed_hosts
-    assert "mind1.internal:*" in s.allowed_hosts     # any port on that host
-    assert "10.1.7.242:*" in s.allowed_hosts
-    assert "https://mind1.internal" in s.allowed_origins
+    # Each host twice: as given, and with `:*` so any port on it is accepted.
+    assert s.allowed_hosts == ["mind1.internal", "10.1.7.242",
+                               "mind1.internal:*", "10.1.7.242:*"]
+    # Both schemes for each host. Asserted as a whole list rather than with `in`: a
+    # substring test against a URL literal is the shape of a real sanitisation bug, so
+    # CodeQL flags it whether or not the right-hand side is a list. The exact list is the
+    # stronger assertion anyway, since it also pins what is not there.
+    assert s.allowed_origins == ["http://mind1.internal", "https://mind1.internal",
+                                 "http://10.1.7.242", "https://10.1.7.242"]
