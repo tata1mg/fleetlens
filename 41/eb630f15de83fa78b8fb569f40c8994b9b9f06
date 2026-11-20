@@ -1,0 +1,32 @@
+docs/deployment.md
+  s_d5ea2fae8a9c21::t_be9628980d4f52 98
+docs/pinning.md
+  s_d5ea2fae8a9c21::t_be9628980d4f52 119
+packages/mind1/pyproject.toml
+  s_d5ea2fae8a9c21::t_be9628980d4f52 7
+docs/index.md
+  s_d5ea2fae8a9c21::t_be9628980d4f52 44
+packages/mind1/mind1/__init__.py
+  s_d5ea2fae8a9c21::t_be9628980d4f52 2
+CHANGELOG.md
+  s_d5ea2fae8a9c21::t_a3b4cf92aa227e 3,5-12
+  s_d5ea2fae8a9c21::t_bed0a1fac76837 29-77
+packages/mind1/README.md
+  s_d5ea2fae8a9c21::t_be9628980d4f52 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41eb630f15de83fa78b8fb569f40c8994b9b9f06",
+  "prompts": {},
+  "sessions": {
+    "s_d5ea2fae8a9c21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cd3d904b-2d1f-4977-be3b-f119abb359a7",
+        "model": "claude-opus-5"
+      },
+      "human_author": "Prashant Mishra <prashant.mishra@1mg.com>"
+    }
+  }
+}
