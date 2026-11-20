@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
-fleetlens is now mind1. This is a hard rename with no compatibility aliases.
+fleetlens is now mind1, and an index can be told to forget a repository.
+
+### The rename
+
+A hard rename with no compatibility aliases. The repository moved to
+`github.com/tata1mg/mind1`; GitHub redirects the old URL, but the documentation site did
+not move with it, so links to `tata1mg.github.io/fleetlens` are dead rather than
+forwarded. The site is now at `tata1mg.github.io/mind1`.
 
 ### Upgrading
 
@@ -19,6 +26,55 @@ fleetlens is now mind1. This is a hard rename with no compatibility aliases.
 - The commands are renamed: `fl` is `mind1`, `fl-symbols` is `mind1-symbols`, and
   `fl-callgraph` is `mind1-callgraph`. The old `build-symbols` and `build-callgraph` names
   in help and error output now match the installed commands.
+- Reinstall rather than pull. An existing environment keeps a working `fl` on PATH that no
+  longer matches the source, which is the confusing failure: `pip uninstall fleetlens`
+  first.
+
+### An index can forget a repository
+
+`mind1 forget <name>...` takes a service or library slug, or a repository as
+`get_index_info` reports it under `repositories`.
+
+Re-indexing replaces what it visits, so a repository you stop indexing was never visited
+and its rows stayed. A decommissioned service went on answering `list_services` and
+`get_service_graph` as a live service, carrying evidence and a confidence label, and
+`get_index_info` went on reporting its commit. Nothing in any response said the row was
+stale, and the only honest fix was deleting the database and rebuilding the fleet.
+
+The rule it follows is that forgetting leaves the index in the state a full rebuild
+without that repository would have produced, and the decisions fall out of it. Edges into
+a forgotten service go, because `resolve` matches callers against indexed services and
+could not recreate them. Enrichments go, although nothing cascades them. A `repo_shas`
+entry goes only when nothing indexed from that repository survives, since one repository
+can declare several services. Authored guidance goes when the repository does, and stays
+when only one of its services was removed. The build is re-stamped, because two different
+indexes sharing a `build_id` is what that field exists to prevent.
+
+It prints what it matched and asks before writing. `--yes` skips the prompt; a
+non-interactive run without it refuses rather than hanging.
+
+### Also
+
+- The documentation is published as a site, from `docs/` on `main`.
+- Every documented install pin is held to `__version__` by a test, so a release that moves
+  the version and forgets a file now fails instead of sending readers to an older build.
+
+### Verified
+
+Indexed two repositories with a real cross-repo edge, forgot one, and compared the result
+to a rebuild of the remaining repository alone: same objects, same edges, same
+`repositories` map.
+
+### Known limits
+
+- `mind1 forget` is not an undo. Nothing records what was removed, and rebuilding stays
+  the way back.
+- `repo_shas` is keyed by directory name while objects carry an absolute path, and nothing
+  in the index joins the two, so a repository is matched by walking up a service's root
+  looking for that name. That is ambiguous when a directory inside one repository shares a
+  name with another, which is why the command shows what it matched before writing.
+- The old `FLEETLENS_*` variables and `fleetlens.yaml` manifests are ignored silently.
+  Nothing warns that a setting stopped being read.
 
 ## 0.3.1
 

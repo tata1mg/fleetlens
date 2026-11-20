@@ -116,7 +116,7 @@ If you do install the CLI, the base install is enough. The pin commands need non
 indexing toolchain, so no extras:
 
 ```bash
-pip install "mind1 @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
+pip install "mind1 @ git+https://github.com/tata1mg/mind1.git@v0.4.0#subdirectory=packages/mind1"
 ```
 
 ## Recording what you measured against
