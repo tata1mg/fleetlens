@@ -27,7 +27,7 @@
 #
 #   docker build --build-arg EXTRA_CA=corp-root.crt -t mind1 .
 
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Optional: an extra root CA, for networks that intercept TLS. Left empty by default.
 ARG EXTRA_CA=""
