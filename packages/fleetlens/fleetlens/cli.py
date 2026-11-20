@@ -365,6 +365,48 @@ def _cmd_resolve(args) -> int:
     return 0
 
 
+def _cmd_forget(args) -> int:
+    from .forget import forget, plan
+
+    store = SqliteStore(args.db)
+    try:
+        p = plan(store, args.name)
+        if p.unknown:
+            print("fl forget: not in this index: " + ", ".join(sorted(p.unknown)),
+                  file=sys.stderr)
+            print("           names are service or library slugs (`fl serve` exposes "
+                  "list_services), or a repository as get_index_info reports it",
+                  file=sys.stderr)
+            return 2
+        if not p:
+            print("fl forget: nothing to remove")
+            return 0
+        for t in sorted(p.targets, key=lambda t: t.slug):
+            where = t.root or "root unrecorded"
+            print(f"  {t.kind} {t.slug}: {t.symbols} symbols, {t.interfaces} interfaces "
+                  f"({where})")
+        for key in p.repos:
+            print(f"  repository {key}: its commit leaves the index")
+        print("  edges into these services go with them, and so do their enrichments")
+        if not args.yes:
+            if not sys.stdin.isatty():
+                print("fl forget: refusing to remove without confirmation; pass --yes",
+                      file=sys.stderr)
+                return 1
+            if input("remove from the index? [y/N] ").strip().lower() not in ("y", "yes"):
+                print("fl forget: cancelled")
+                return 1
+        r = forget(store, p)
+    finally:
+        store.close()
+    removed = ", ".join(r["slugs"]) or "nothing"
+    print(f"fl forget: removed {removed} ({r['objects']} objects, {r['guidance']} guidance, "
+          f"{r['enrichments']} enrichments)")
+    if r["repos"]:
+        print(f"fl forget: {', '.join(r['repos'])} no longer listed as indexed")
+    return 0
+
+
 def _cmd_export_graph(args) -> int:
     store = SqliteStore(args.db)
     try:
@@ -682,6 +724,13 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("resolve", help="(re)compute cross-repo service->service edges")
     p.add_argument("--db", default=_DEFAULT_DB)
     p.set_defaults(func=_cmd_resolve)
+
+    p = sub.add_parser("forget", help="remove a repository, service or library from the index")
+    p.add_argument("name", nargs="+",
+                   help="service or library slug, or a repository as get_index_info reports it")
+    p.add_argument("--db", default=_DEFAULT_DB)
+    p.add_argument("--yes", "-y", action="store_true", help="skip the confirmation")
+    p.set_defaults(func=_cmd_forget)
 
     p = sub.add_parser("export-graph", help="render the service mesh to a self-contained HTML file")
     p.add_argument("--db", default=_DEFAULT_DB)

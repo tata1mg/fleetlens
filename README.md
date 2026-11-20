@@ -126,8 +126,14 @@ streamable-HTTP behind a shared bearer token, with the index opened read-only. S
 ```bash
 fl index /path/to/repo --db fleetlens.db     # a single repo instead of a fleet
 fl resolve --db fleetlens.db                 # recompute cross-repo edges
+fl forget old-service --db fleetlens.db      # take a repo back out of the index
 fl export-graph --db fleetlens.db -o mesh.html   # self-contained HTML render, no server
 ```
+
+Re-indexing replaces what it visits, so a repository you simply stop indexing stays in the
+index and keeps answering as a live service. `fl forget` takes it out: a service or library
+slug, or a repository as `get_index_info` reports it. It prints what it matched and asks
+before writing, and leaves the index as a full rebuild without that repository would have.
 </details>
 
 ---
