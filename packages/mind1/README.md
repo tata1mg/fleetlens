@@ -16,7 +16,7 @@ live at **https://github.com/tata1mg/mind1**.
 mind1 is not on PyPI yet, so install from git and pin a tag:
 
 ```bash
-pip install "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
+pip install "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.4.0#subdirectory=packages/mind1"
 ```
 
 The base install is enough to manage pinned indexes on a remote server; `[all]` adds the

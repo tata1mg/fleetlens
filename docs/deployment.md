@@ -95,7 +95,7 @@ cannot update:
 ```bash
 sudo -u "$MIND1_USER" python3 -m venv "$MIND1_HOME/venv"
 sudo -u "$MIND1_USER" "$MIND1_HOME/venv/bin/pip" install \
-  "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
+  "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.4.0#subdirectory=packages/mind1"
 ```
 
 mind1 is not on PyPI, so the install is from git. Pin the tag rather than tracking

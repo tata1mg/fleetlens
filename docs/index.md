@@ -41,7 +41,7 @@ and cannot overrule anything they worked out. Switch it off and you still have t
 ## Install
 
 ```bash
-pip install "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
+pip install "mind1[all] @ git+https://github.com/tata1mg/mind1.git@v0.4.0#subdirectory=packages/mind1"
 mind1 index-all ~/repos --db mind1.db
 mind1 serve --db mind1.db
 ```
