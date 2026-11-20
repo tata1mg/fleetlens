@@ -1,10 +1,10 @@
 """Benchmark harness — run one question set through both arms and record raw results.
 
-Arms differ by exactly one variable: whether the fleetlens MCP server is available.
+Arms differ by exactly one variable: whether the mind1 MCP server is available.
 Everything else (model, tools, corpus, prompt, turn budget) is identical.
 
     A0 baseline : Read/Grep/Glob/Bash over the corpus, no MCP servers
-    A1 fleetlens: the same, plus mcp__fleetlens__*
+    A1 mind1: the same, plus mcp__mind1__*
 
 `--strict-mcp-config` is mandatory: without it both arms would silently inherit whatever
 MCP servers the operator has configured globally, which would invalidate the comparison.
@@ -39,7 +39,7 @@ When you have finished investigating, output your final answer as a JSON code bl
 Output the JSON block once, at the very end."""
 
 BASE_TOOLS = "Read,Grep,Glob,Bash"
-FLEETLENS_TOOLS = BASE_TOOLS + ",mcp__fleetlens__*"
+MIND1_TOOLS = BASE_TOOLS + ",mcp__mind1__*"
 
 
 def arm_specs(db: Path, fl_bin: str) -> dict:
@@ -48,14 +48,14 @@ def arm_specs(db: Path, fl_bin: str) -> dict:
             "mcp": {"mcpServers": {}},
             "tools": BASE_TOOLS,
         },
-        "A1_fleetlens": {
-            "mcp": {"mcpServers": {"fleetlens": {
+        "A1_mind1": {
+            "mcp": {"mcpServers": {"mind1": {
                 "type": "stdio",
                 "command": fl_bin,
                 "args": ["serve", "--db", str(db)],
                 "env": {},
             }}},
-            "tools": FLEETLENS_TOOLS,
+            "tools": MIND1_TOOLS,
         },
     }
 
@@ -169,7 +169,7 @@ def run_one(question: dict, arm: str, spec: dict, corpus: Path, cwd: Path,
         "billable_tokens": usage["input_tokens"] + usage["output_tokens"]
                            + usage["cache_creation_input_tokens"] + usage["cache_read_input_tokens"],
         "tools_called": tools_called,
-        "fleetlens_calls": sum(1 for t in tools_called if str(t).startswith("mcp__fleetlens__")),
+        "mind1_calls": sum(1 for t in tools_called if str(t).startswith("mcp__mind1__")),
         "mcp_servers": mcp_status,
         "permission_denials": payload.get("permission_denials"),
         "session_id": payload.get("session_id"),
@@ -186,7 +186,7 @@ def main() -> int:
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--reps", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=900)
-    ap.add_argument("--fl-bin", default="fl")
+    ap.add_argument("--mind1-bin", default="mind1")
     ap.add_argument("--only", default="", help="comma-separated question ids")
     ap.add_argument("--workers", type=int, default=1,
                     help="run N cases concurrently. Each case is a separate subprocess and "
@@ -207,7 +207,7 @@ def main() -> int:
     corpus, db = Path(args.corpus).resolve(), Path(args.db).resolve()
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    # a neutral, writable cwd so neither arm starts inside the corpus or the fleetlens repo
+    # a neutral, writable cwd so neither arm starts inside the corpus or the mind1 repo
     cwd = (out_dir / "_scratch").resolve()
     cwd.mkdir(exist_ok=True)
 

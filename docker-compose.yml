@@ -1,6 +1,6 @@
 # Serve one index to a team.
 #
-#   export FLEETLENS_TOKEN=$(openssl rand -hex 32)
+#   export MIND1_TOKEN=$(openssl rand -hex 32)
 #   docker compose run --rm index      # build the index
 #   docker compose up -d serve         # serve it on :8081
 #
@@ -13,35 +13,35 @@ services:
     build: .
     profiles: [tools]          # only runs when named, never with `up`
     volumes:
-      - fleetlens-data:/data
-      - ${FLEETLENS_REPOS:-./repos}:/repos   # read-write: fleetlens writes .context/ per repo
-    # Explicit --db on both services on purpose. The image sets FLEETLENS_HOME=/data, whose
-    # default index path is /data/data/fleetlens.db, so naming the file here and leaving it
+      - mind1-data:/data
+      - ${MIND1_REPOS:-./repos}:/repos   # read-write: mind1 writes .context/ per repo
+    # Explicit --db on both services on purpose. The image sets MIND1_HOME=/data, whose
+    # default index path is /data/data/mind1.db, so naming the file here and leaving it
     # implicit there would silently point the two at different files.
-    # The image's ENTRYPOINT is `fl`, so running a shell pipeline here needs it overridden,
-    # otherwise the whole thing is handed to `fl` as a subcommand.
+    # The image's ENTRYPOINT is `mind1`, so running a shell pipeline here needs it overridden,
+    # otherwise the whole thing is handed to `mind1` as a subcommand.
     entrypoint: ["/bin/sh", "-c"]
     # A single-element list on purpose: a folded scalar is split into separate argv
     # entries, and `sh -c` would then run only the first of them.
-    command: ["fl index-all /repos --db /data/fleetlens.db.new && mv /data/fleetlens.db.new /data/fleetlens.db"]
+    command: ["mind1 index-all /repos --db /data/mind1.db.new && mv /data/mind1.db.new /data/mind1.db"]
 
   serve:
     build: .
     restart: unless-stopped
     ports:
-      - "${FLEETLENS_PORT:-8081}:8081"
+      - "${MIND1_PORT:-8081}:8081"
     volumes:
-      - fleetlens-data:/data:ro
+      - mind1-data:/data:ro
       # The index stays read-only so the server cannot corrupt it. Pin snapshots are the
       # one thing the server does write, so they get a volume of their own.
-      - fleetlens-pins:/pins
+      - mind1-pins:/pins
     environment:
-      FLEETLENS_TOKEN: ${FLEETLENS_TOKEN:?set FLEETLENS_TOKEN, e.g. export FLEETLENS_TOKEN=$(openssl rand -hex 32)}
-    command: ["serve", "--http", "--host", "0.0.0.0", "--db", "/data/fleetlens.db", "--pins-dir", "/pins"]
+      MIND1_TOKEN: ${MIND1_TOKEN:?set MIND1_TOKEN, e.g. export MIND1_TOKEN=$(openssl rand -hex 32)}
+    command: ["serve", "--http", "--host", "0.0.0.0", "--db", "/data/mind1.db", "--pins-dir", "/pins"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8081/healthz')"]
       interval: 30s
 
 volumes:
-  fleetlens-data:
-  fleetlens-pins:
+  mind1-data:
+  mind1-pins:

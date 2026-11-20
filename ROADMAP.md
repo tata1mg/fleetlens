@@ -1,6 +1,6 @@
 # Roadmap
 
-fleetlens is early. This is what works, what does not, and what is likely next. It is
+mind1 is early. This is what works, what does not, and what is likely next. It is
 descriptive rather than a schedule, and dates are deliberately absent.
 
 ## What works today
@@ -28,7 +28,7 @@ by reading publish and consume sites plus configuration.
 **The cross-repo resolver.** Outbound calls and config-declared hosts are joined against
 the fleet's interface inventory to produce `calls`, `publishes_to` and `shares_channel`
 edges. Host resolution is pluggable, so a fleet with its own naming convention can teach
-fleetlens that convention without a fork.
+mind1 that convention without a fork.
 
 **Serving.** An MCP server over stdio for one engineer, or over HTTP behind a shared token
 for a team. A served index carries a build id, a schema version and the commit each
@@ -66,7 +66,7 @@ Roughly in order of how often we expect it to matter:
    work here. This is the single biggest weakness in the current evidence.
 3. **gRPC and GraphQL interfaces.**
 4. **Refuse an index newer than the server understands.** The build id, schema version,
-   fleetlens version and per-repository git SHA are recorded in every index and reported by
+   mind1 version and per-repository git SHA are recorded in every index and reported by
    `get_index_info`; what remains is acting on the schema version at startup.
 5. **Pruning on re-index**, so a removed service leaves no orphans behind.
 6. **A full-text index over symbol ids.** `find_symbol` answers in about 6 ms when a term

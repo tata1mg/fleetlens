@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Latency and throughput of the fleetlens MCP server, per tool, under load.
+"""Latency and throughput of the mind1 MCP server, per tool, under load.
 
 Measures what an agent actually experiences: the official MCP client over streamable HTTP,
 including transport and session overhead, against a running server. Not a microbenchmark of
-the store — `fl index --stats` covers that.
+the store — `mind1 index --stats` covers that.
 
 Two classes of tool, reported apart because their latencies differ by orders of magnitude
 and averaging them would hide both:
@@ -14,7 +14,7 @@ and averaging them would hide both:
 Arguments are sampled from the index itself through the server, so the run exercises many
 different services, symbols and interfaces rather than measuring a cache hit on one id.
 
-    python bench/mcp_perf.py --url http://host:8081/mcp --token "$FLEETLENS_TOKEN" \
+    python bench/mcp_perf.py --url http://host:8081/mcp --token "$MIND1_TOKEN" \
         --concurrency 1,4,8,16 --requests 60 --note "8 vCPU, 16 GiB, Ollama on same host"
 
 Writes a JSON record and prints a Markdown table ready for the README.
@@ -261,7 +261,7 @@ def markdown(report: dict) -> str:
     if not report.get("semantic_available"):
         out += ["", "Semantic tools were not exposed by this server, so they are not "
                     "measured here. They are registered only when an embedding model is "
-                    "configured (`fl serve --embed-model ...`)."]
+                    "configured (`mind1 serve --embed-model ...`)."]
     errs = sum(r["errors"] for r in report["rows"])
     out += ["", f"{sum(r['calls'] for r in report['rows'])} calls, {errs} errors."]
     return "\n".join(out)
@@ -269,9 +269,9 @@ def markdown(report: dict) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--url", default=os.environ.get("FLEETLENS_URL",
+    ap.add_argument("--url", default=os.environ.get("MIND1_URL",
                                                     "http://127.0.0.1:8081/mcp"))
-    ap.add_argument("--token", default=os.environ.get("FLEETLENS_TOKEN", ""))
+    ap.add_argument("--token", default=os.environ.get("MIND1_TOKEN", ""))
     ap.add_argument("--concurrency", default="1,4,8,16")
     ap.add_argument("--requests", type=int, default=60, help="calls per tool per level")
     ap.add_argument("--width", type=int, default=20, help="distinct ids to sample per kind")

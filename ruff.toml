@@ -1,5 +1,5 @@
 # One lint config for the whole repository, at the root on purpose: ruff resolves config
-# per file from the nearest ancestor, so a config inside packages/fleetlens/ would leave
+# per file from the nearest ancestor, so a config inside packages/mind1/ would leave
 # bench/ linted under whatever the installed ruff happens to default to.
 #
 # `select` is explicit for the same reason. Ruff's default rule set grows between releases,

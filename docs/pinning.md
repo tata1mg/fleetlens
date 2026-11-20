@@ -14,33 +14,33 @@ Two things have to be true of the server, not of your machine:
 
 - **SQLite 3.27 or newer**, because the snapshot is taken with `VACUUM INTO`.
 - **An index built by 0.2.0 or later.** Earlier indexes carry no build id, and there is
-  nothing to name a pin after, so `fl pin create` returns 409. Re-index to fix it.
+  nothing to name a pin after, so `mind1 pin create` returns 409. Re-index to fix it.
 
 ## The short version
 
 ```bash
-export FLEETLENS_URL=http://fleetlens.internal:8081
-export FLEETLENS_TOKEN=...                         # the team's shared token
+export MIND1_URL=http://mind1.internal:8081
+export MIND1_TOKEN=...                         # the team's shared token
 
-fl pin create --as eval-q4 --reason "baseline for the Q4 agent run"
+mind1 pin create --as eval-q4 --reason "baseline for the Q4 agent run"
 # pinned build 20261021T071755Z as "eval-q4", expires 2026-11-20
 ```
 
 Then point your MCP client at the pin instead of the live server:
 
 ```
-http://fleetlens.internal:8081/mcp                 # always the newest index
-http://fleetlens.internal:8081/pins/eval-q4/mcp    # your snapshot, until it expires
+http://mind1.internal:8081/mcp                 # always the newest index
+http://mind1.internal:8081/pins/eval-q4/mcp    # your snapshot, until it expires
 ```
 
 Same tools, same token, same responses. Nothing else about your setup changes.
 
 ## How it works
 
-A fleetlens index is one SQLite file, so a pin is a copy of that file with a name and an
+A mind1 index is one SQLite file, so a pin is a copy of that file with a name and an
 expiry date.
 
-1. **`fl pin create` snapshots the index the server is serving right now.** The copy is
+1. **`mind1 pin create` snapshots the index the server is serving right now.** The copy is
    taken with SQLite's `VACUUM INTO`, which is consistent even if a rebuild is running, so
    you never get a half-written pin.
 2. **The copy never changes.** Later rebuilds replace the live index and leave your pin
@@ -59,13 +59,13 @@ All four talk to the server over HTTP. They do not touch your local machine's in
 they do not need one.
 
 ```bash
-fl pin create --as <alias> [--reason "..."] [--owner "..."]
-fl pin list
-fl pin extend <alias> --days N
-fl pin delete <alias>            # fl unpin <alias> does the same thing
+mind1 pin create --as <alias> [--reason "..."] [--owner "..."]
+mind1 pin list
+mind1 pin extend <alias> --days N
+mind1 pin delete <alias>            # mind1 unpin <alias> does the same thing
 ```
 
-`fl pin list` shows the alias, the build it captured, who made it, why, and when it goes:
+`mind1 pin list` shows the alias, the build it captured, who made it, why, and when it goes:
 
 ```
 ALIAS       BUILD             OWNER  REASON                         EXPIRES
@@ -85,38 +85,38 @@ Pick a name you will recognise in three weeks. `eval-q4` is better than `test2`.
 In order of precedence:
 
 1. `--url` and `--token` on the command line
-2. `FLEETLENS_URL` and `FLEETLENS_TOKEN` in the environment
-3. `url` and `token` in `~/.config/fleetlens/config.toml`, or under `$XDG_CONFIG_HOME`
+2. `MIND1_URL` and `MIND1_TOKEN` in the environment
+3. `url` and `token` in `~/.config/mind1/config.toml`, or under `$XDG_CONFIG_HOME`
 
 ```toml
-# ~/.config/fleetlens/config.toml
-url = "http://fleetlens.internal:8081"
+# ~/.config/mind1/config.toml
+url = "http://mind1.internal:8081"
 token = "..."
 ```
 
-`FLEETLENS_TOKEN` is the same shared token your MCP client already sends, so if fleetlens
+`MIND1_TOKEN` is the same shared token your MCP client already sends, so if mind1
 is configured in your editor you already have it.
 
 ### You do not have to install anything
 
-`fl pin` is a convenience over plain HTTP. Everything it does works with curl, which is
+`mind1 pin` is a convenience over plain HTTP. Everything it does works with curl, which is
 useful from CI or from a machine where you do not want a Python environment:
 
 ```bash
-curl -X POST "$FLEETLENS_URL/pins" \
-     -H "Authorization: Bearer $FLEETLENS_TOKEN" \
+curl -X POST "$MIND1_URL/pins" \
+     -H "Authorization: Bearer $MIND1_TOKEN" \
      -d '{"alias":"eval-q4","reason":"baseline for the Q4 agent run"}'
 
-curl -H "Authorization: Bearer $FLEETLENS_TOKEN" "$FLEETLENS_URL/pins"
-curl -X PATCH  "$FLEETLENS_URL/pins/eval-q4" -H "Authorization: Bearer $FLEETLENS_TOKEN" -d '{"days":5}'
-curl -X DELETE "$FLEETLENS_URL/pins/eval-q4" -H "Authorization: Bearer $FLEETLENS_TOKEN"
+curl -H "Authorization: Bearer $MIND1_TOKEN" "$MIND1_URL/pins"
+curl -X PATCH  "$MIND1_URL/pins/eval-q4" -H "Authorization: Bearer $MIND1_TOKEN" -d '{"days":5}'
+curl -X DELETE "$MIND1_URL/pins/eval-q4" -H "Authorization: Bearer $MIND1_TOKEN"
 ```
 
 If you do install the CLI, the base install is enough. The pin commands need none of the
 indexing toolchain, so no extras:
 
 ```bash
-pip install "fleetlens @ git+https://github.com/tata1mg/fleetlens.git@v0.3.1#subdirectory=packages/fleetlens"
+pip install "mind1 @ git+https://github.com/tata1mg/mind1.git@v0.3.1#subdirectory=packages/mind1"
 ```
 
 ## Recording what you measured against
@@ -144,22 +144,22 @@ Log all three with your results.
 
 ## Expiry
 
-The server decides how long a pin lives, which is why `fl pin create` takes no duration. An
+The server decides how long a pin lives, which is why `mind1 pin create` takes no duration. An
 operator sets the policy once and nobody can opt out of it by asking for ten years.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `FLEETLENS_RETAIN_PINNED_DAYS` | 30 | How long a new pin lives |
-| `FLEETLENS_PIN_EXTEND_MAX_DAYS` | 10 | The most one `extend` may add |
+| `MIND1_RETAIN_PINNED_DAYS` | 30 | How long a new pin lives |
+| `MIND1_PIN_EXTEND_MAX_DAYS` | 10 | The most one `extend` may add |
 
-`fl pin extend` pushes the expiry out, by up to the cap each time:
+`mind1 pin extend` pushes the expiry out, by up to the cap each time:
 
 ```
-$ fl pin extend eval-q4 --days 5
+$ mind1 pin extend eval-q4 --days 5
 "eval-q4" now expires 2026-11-25
 
-$ fl pin extend eval-q4 --days 99
-fl pin: days must be a whole number from 1 to 10
+$ mind1 pin extend eval-q4 --days 99
+mind1 pin: days must be a whole number from 1 to 10
 ```
 
 You can extend more than once, so a long-running experiment is fine; you just have to come
@@ -175,12 +175,12 @@ is hundreds of megabytes. There is no per-pin quota, so the disk is a shared res
 the team's manners are what protect it.
 
 **Anyone can delete anyone's pin.** The server uses one shared token, so `--owner` is a
-label that makes `fl pin list` readable, not a permission. Name your pins clearly and check
+label that makes `mind1 pin list` readable, not a permission. Name your pins clearly and check
 with people before removing theirs.
 
 **A handful of pins can be served at once.** Each open pin holds its enrichment vectors in
 memory, so the server caches a few and reopens the rest on demand, controlled by
-`FLEETLENS_MAX_OPEN_PINS`. The first semantic search against a pin that has just been opened
+`MIND1_MAX_OPEN_PINS`. The first semantic search against a pin that has just been opened
 takes a moment longer; after that it is as fast as the live index.
 
 **An alias that does not exist returns 404**, never a quiet fall back to the live index.

@@ -163,8 +163,8 @@ def main() -> int:
             "cost_usd_list_total": round(sum(r.get("cost_usd_list_equivalent") or 0 for r in rs), 4),
             "new_tokens_mean": agg([r.get("new_tokens") for r in rs]),
             "cache_read_mean_": agg([r.get("cache_read_input_tokens") for r in rs]),
-            "fleetlens_calls_mean": agg([r.get("fleetlens_calls") for r in rs]),
-            "runs_using_fleetlens": sum(1 for r in rs if (r.get("fleetlens_calls") or 0) > 0),
+            "mind1_calls_mean": agg([r.get("mind1_calls") for r in rs]),
+            "runs_using_mind1": sum(1 for r in rs if (r.get("mind1_calls") or 0) > 0),
             "turns_mean": agg([r.get("num_turns") for r in rs]),
             "wall_s_mean": agg([r.get("wall_s") for r in rs]),
             "input_tokens_mean": agg([r.get("input_tokens") for r in rs]),
@@ -176,7 +176,7 @@ def main() -> int:
               f"{row['hallucinations_total']:>8}{row['new_tokens_mean'] or 0:>9.0f}{row['cache_read_mean_'] or 0:>9.0f}"
               f"{row['turns_mean'] or 0:>7.1f}{row['wall_s_mean'] or 0:>7.1f}"
               f"{row['cost_usd_list_mean'] or 0:>9.4f}{row['timeouts']:>5}"
-              f"{row['runs_using_fleetlens']:>5}/{row['n']}")
+              f"{row['runs_using_mind1']:>5}/{row['n']}")
 
     print("\n-- cross-repo questions only --")
     for arm in sorted(by_arm):

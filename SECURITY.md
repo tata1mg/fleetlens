@@ -3,10 +3,10 @@
 ## Reporting a vulnerability
 
 Report security issues privately through
-[GitHub security advisories](https://github.com/tata1mg/fleetlens/security/advisories/new)
+[GitHub security advisories](https://github.com/tata1mg/mind1/security/advisories/new)
 rather than opening a public issue.
 
-## What fleetlens does with your code
+## What mind1 does with your code
 
 The deterministic core runs entirely on your machine. It reads source and config files, writes
 a SQLite database and a `.context/` directory inside each indexed repository, and makes no
@@ -14,14 +14,14 @@ network calls.
 
 Two paths can send code off the machine, and both are opt-in:
 
-* `fl enrich` and `fl index --fill-gaps` with `--provider openai` or another remote endpoint.
+* `mind1 enrich` and `mind1 index --fill-gaps` with `--provider openai` or another remote endpoint.
   The default provider is Ollama, which runs locally.
 * Nothing else. The MCP server makes no outbound calls of its own, unless it is configured
   with a remote embedding provider for the semantic search tools.
 
 ## The HTTP server
 
-`fl serve --http` is the only part of fleetlens that listens on a network, and it is built
+`mind1 serve --http` is the only part of mind1 that listens on a network, and it is built
 for a trusted network rather than for the open internet. Know these before you expose it:
 
 * **No TLS.** Requests and the bearer token travel in the clear. Put it behind a reverse
@@ -38,7 +38,7 @@ for a trusted network rather than for the open internet. Know these before you e
 
 ### Serving source
 
-`FLEETLENS_EXPOSE_SOURCE=1` adds a `get_source` tool that returns the code behind an indexed
+`MIND1_EXPOSE_SOURCE=1` adds a `get_source` tool that returns the code behind an indexed
 symbol. It is off unless set, and is never offered over stdio.
 
 Enabling it changes what a leaked token costs. Without it, an attacker learns the structure
@@ -46,7 +46,7 @@ of your systems. With it, they can read the source of every repository in the in
 the same single shared token described above, over the same connection with no TLS.
 
 The tool takes a symbol id rather than a path, so only spans that were indexed can be read.
-Files matching the patterns below, or a repository's `.fleetlensignore`, are never indexed
+Files matching the patterns below, or a repository's `.mind1ignore`, are never indexed
 and therefore cannot be returned. That containment is structural rather than a filter: the
 span does not exist. It does not extend to a secret written inside an ordinary source file,
 which is readable to anyone who can clone the repository and is readable here too.
@@ -56,7 +56,7 @@ matches the span the index recorded rather than whatever the working copy holds 
 
 ## Config and secrets
 
-fleetlens reads configuration files to work out which services address which. That includes
+mind1 reads configuration files to work out which services address which. That includes
 `.env`, because `ORDERS_SERVICE_HOST=orders-svc` is exactly the fact it is looking for.
 
 Connection strings routinely carry a password in the middle of an address, so the credential
@@ -73,8 +73,8 @@ id_rsa  id_dsa  id_ecdsa  id_ed25519
 .npmrc  .pypirc  .netrc  .htpasswd
 ```
 
-A repo can exclude more by listing patterns in `.fleetlensignore`, one per line, gitignore
-style. That includes `.env` itself if you would rather fleetlens did not read it, at the cost
+A repo can exclude more by listing patterns in `.mind1ignore`, one per line, gitignore
+style. That includes `.env` itself if you would rather mind1 did not read it, at the cost
 of the service addresses declared there. A repo can add to this set; it cannot remove
 anything from the list above.
 
